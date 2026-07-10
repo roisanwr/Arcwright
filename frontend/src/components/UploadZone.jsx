@@ -65,7 +65,7 @@ export default function UploadZone({ onUploadComplete }) {
         onDragLeave={handleDragLeave}
         onClick={() => fileInputRef.current?.click()}
         className={`
-          border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-all
+          border-2 border-dashed rounded-xl p-6 sm:p-8 md:p-12 text-center cursor-pointer transition-all
           ${dragging
             ? 'border-purple-500 bg-purple-500/10'
             : 'border-gray-700 hover:border-gray-600 bg-gray-900/30 hover:bg-gray-900/50'
@@ -83,22 +83,23 @@ export default function UploadZone({ onUploadComplete }) {
 
         {uploading ? (
           <div>
-            <div className="animate-spin w-10 h-10 border-3 border-purple-500 border-t-transparent rounded-full mx-auto mb-4" />
-            <p className="text-gray-400">Uploading & processing PDF...</p>
+            <div className="animate-spin w-8 sm:w-10 h-8 sm:h-10 border-3 border-purple-500 border-t-transparent rounded-full mx-auto mb-3 sm:mb-4" />
+            <p className="text-sm sm:text-base text-gray-400">Uploading &amp; processing PDF...</p>
           </div>
         ) : (
           <div>
-            <div className="text-5xl mb-4">📄</div>
-            <p className="text-lg font-medium text-gray-300 mb-1">
+            <div className="text-4xl sm:text-5xl mb-3 sm:mb-4">📄</div>
+            <p className="text-base sm:text-lg font-medium text-gray-300 mb-1">
               Drop your PDF here
             </p>
-            <p className="text-sm text-gray-500">
-              or click to browse — any PDF, any language
+            <p className="text-xs sm:text-sm text-gray-500">
+              or click to browse &mdash; any PDF, any language
             </p>
-            <div className="flex items-center justify-center gap-4 mt-4 text-xs text-gray-600">
-              <span>🔍 OCR for scanned docs</span>
-              <span>✂️ Auto-chunking</span>
-              <span>🧠 Vector embeddings</span>
+            {/* Feature tags — stack on mobile, row on larger */}
+            <div className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-4 mt-3 sm:mt-4 text-[10px] sm:text-xs text-gray-600">
+              <span className="inline-flex items-center gap-1 bg-gray-800/50 px-2 py-1 rounded-full">🔍 OCR for scanned docs</span>
+              <span className="inline-flex items-center gap-1 bg-gray-800/50 px-2 py-1 rounded-full">✂️ Auto-chunking</span>
+              <span className="inline-flex items-center gap-1 bg-gray-800/50 px-2 py-1 rounded-full">🧠 Vector embeddings</span>
             </div>
           </div>
         )}
@@ -106,7 +107,7 @@ export default function UploadZone({ onUploadComplete }) {
 
       {error && (
         <div className="mt-3 bg-red-900/20 border border-red-800 rounded-lg p-3">
-          <p className="text-red-400 text-sm">{error}</p>
+          <p className="text-red-400 text-xs sm:text-sm">{error}</p>
         </div>
       )}
     </div>

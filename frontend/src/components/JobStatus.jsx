@@ -33,21 +33,21 @@ export default function JobStatus({ jobId, filename, isActive, onSelect }) {
   return (
     <button
       onClick={onSelect}
-      className={`w-full text-left p-4 rounded-xl border transition-all ${
+      className={`w-full text-left p-3 sm:p-4 rounded-xl border transition-all min-h-[52px] ${
         isActive
           ? 'border-purple-600 bg-purple-900/20'
           : 'border-gray-800 bg-gray-900/50 hover:border-gray-700'
       }`}
     >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3 min-w-0">
-          <span>{icons[status] || '📄'}</span>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <span className="text-base sm:text-lg shrink-0">{icons[status] || '📄'}</span>
           <div className="min-w-0">
-            <p className="font-medium text-sm truncate">{filename}</p>
-            <p className="text-xs text-gray-500">Job: {jobId}</p>
+            <p className="font-medium text-xs sm:text-sm truncate">{filename}</p>
+            <p className="text-[10px] sm:text-xs text-gray-500">Job: {jobId}</p>
           </div>
         </div>
-        <span className={`px-2 py-0.5 rounded text-xs font-medium border ${statusColor}`}>
+        <span className={`px-2 py-0.5 rounded text-[10px] sm:text-xs font-medium border shrink-0 ${statusColor}`}>
           {status}
         </span>
       </div>

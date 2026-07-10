@@ -37,24 +37,24 @@ export default function ChatPanel({ collectionName }) {
   }
 
   return (
-    <div className="bg-gray-900/50 rounded-xl border border-gray-800 p-5">
-      <h3 className="font-semibold mb-3 flex items-center gap-2">
+    <div className="bg-gray-900/50 rounded-xl border border-gray-800 p-4 sm:p-5">
+      <h3 className="font-semibold mb-3 flex items-center gap-2 text-sm sm:text-base">
         <span>🧪</span>
-        Test RAG — &quot;{collectionName}&quot;
+        <span className="truncate">Test RAG &mdash; {collectionName}</span>
       </h3>
 
-      <form onSubmit={handleSearch} className="flex gap-2 mb-4">
+      <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-2 mb-4">
         <input
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Ask a question about your PDF..."
-          className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600 transition-colors"
+          className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 sm:px-4 py-2.5 text-xs sm:text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600 transition-colors min-h-[40px]"
         />
         <button
           type="submit"
           disabled={loading || !query.trim()}
-          className="px-5 py-2.5 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-lg text-sm font-medium transition-colors"
+          className="w-full sm:w-auto px-4 sm:px-5 py-2.5 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-lg text-sm font-medium transition-colors min-h-[40px]"
         >
           {loading ? '...' : 'Search'}
         </button>
@@ -62,7 +62,7 @@ export default function ChatPanel({ collectionName }) {
 
       {error && (
         <div className="bg-red-900/20 border border-red-800 rounded-lg p-3 mb-3">
-          <p className="text-red-400 text-sm">{error}</p>
+          <p className="text-red-400 text-xs sm:text-sm">{error}</p>
         </div>
       )}
 
@@ -72,21 +72,21 @@ export default function ChatPanel({ collectionName }) {
             Found {results.total_found} relevant chunks
           </p>
           {results.sources.map((source, i) => (
-            <div key={i} className="bg-gray-800/50 rounded-lg p-4 border border-gray-700/50">
+            <div key={i} className="bg-gray-800/50 rounded-lg p-3 sm:p-4 border border-gray-700/50">
               <div className="flex items-start justify-between gap-2 mb-2">
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-purple-300 truncate">
+                  <p className="text-xs sm:text-sm font-medium text-purple-300 truncate">
                     {source.title || 'Untitled'}
                   </p>
                   {source.section && (
-                    <p className="text-xs text-gray-500">{source.section}</p>
+                    <p className="text-[10px] sm:text-xs text-gray-500 truncate">{source.section}</p>
                   )}
                 </div>
-                <span className="text-xs text-gray-600 shrink-0">
+                <span className="text-[10px] sm:text-xs text-gray-600 shrink-0">
                   d={source.distance.toFixed(3)}
                 </span>
               </div>
-              <p className="text-sm text-gray-400 leading-relaxed line-clamp-4">
+              <p className="text-xs sm:text-sm text-gray-400 leading-relaxed line-clamp-3 sm:line-clamp-4">
                 {source.text}
               </p>
             </div>
