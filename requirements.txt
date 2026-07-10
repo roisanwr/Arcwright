@@ -1,5 +1,0 @@
-marker-pdf>=1.10
-sentence-transformers>=5.0
-chromadb>=1.5
-pymupdf>=1.28
-tqdm>=4.60
