@@ -1,0 +1,29 @@
+- Story: Substance, Structure, Style and the Principles of Screenwriting (Robert McKee · 1997)
+- The Hero with a Thousand Faces (Joseph Campbell · 1949)
+- On Writing: A Memoir of the Craft (Stephen King · 2000)
+- Save the Cat! The Last Book on Screenwriting You'll Ever Need (Blake Snyder · 2005)
+- Wired for Story: The Writer's Guide to Using Brain Science to Hook Readers (Lisa Cron · 2012)
+- Story Genius: How to Use Brain Science to Go Beyond Outlining (Lisa Cron · 2016)
+- The Anatomy of Story: 22 Steps to Becoming a Master Storyteller (John Truby · 2007)
+- Building a StoryBrand: Clarify Your Message So Customers Will Listen (Donald Miller · 2017)
+- Made to Stick: Why Some Ideas Survive and Others Die (Chip Heath & Dan Heath · 2007)
+- Storyworthy: Engage, Teach, Persuade, and Change Your Life Through the Power of Storytelling (Matthew Dicks · 2018)
+- The Science of Storytelling: Why Stories Make Us Human and How to Tell Them Better (Will Storr · 2019)
+- Bird by Bird: Some Instructions on Writing and Life (Anne Lamott · 1994)
+- The Storytelling Animal: How Stories Make Us Human (Jonathan Gottschall · 2012)
+- Resonate: Present Visual Stories that Transform Audiences (Nancy Duarte · 2010)
+- The Writer's Journey: Mythic Structure for Writers. (Christopher Vogler · 1992)
+- Stories That Stick: How Storytelling Can Captivate Customers, Influence Audiences, and Transform Your Business (Kindra Hall · 2019)
+- The Storyteller's Secret: From TED Speakers to Business Legends, Why Some Ideas Catch On (Carmine Gallo · 2016
+- The Power of   Myth (Joseph Campbell & Bill Moyers · 1988)
+- Into the Woods: A Five-Act Journey Into Story (John Yorke · 2013)
+- Pixar Storytelling: Rules for Effective Storytelling Based on Pixar's Greatest Films (Craft & Teknik)
+- _The Elements of Style_ — William Strunk Jr. & E.B. White
+- _Writing Down the Bones_ — Natalie Goldberg
+- _Steering the Craft_ — Ursula K. Le Guin
+- _Wired for Story_ — Lisa Cron _(ini sebenarnya ada di listku, tapi Story Genius-nya yang masuk, bukan Wired for Story-nya langsung)_
+- _Talk Like TED_ — Carmine Gallo
+- _TED Talks: The Official TED Guide to Public Speaking_ — Chris Anderson
+- _Storytelling with Data_ — Cole Nussbaumer Knaflic
+- _Contagious: Why Things Catch On_ (Charna Halpern, Del Close & Kim Johnson)
+- Truth in Comedy : The Manual of Improvisation (Charna Halpern, Del Close & Kim "Howard" Johnson)
