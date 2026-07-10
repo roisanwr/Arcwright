@@ -1,0 +1,29 @@
+# IBM Bob — Custom Modes Configuration
+# Project: Arcwright
+
+modes:
+  code:
+    type: code
+    instructions: .bob/modes/code.md
+    tools:
+      - read
+      - edit
+      - terminal
+      - search
+      - subagent
+
+  plan:
+    type: plan
+    instructions: .bob/modes/plan.md
+    tools:
+      - read
+      - search
+      - web_search
+      - subagent
+
+  ask:
+    type: ask
+    tools:
+      - read
+      - search
+      - web_search

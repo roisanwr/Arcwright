@@ -1,0 +1,13 @@
+{
+  "privacy": {
+    "usageStatisticsEnabled": false
+  },
+  "editor": {
+    "theme": "dark",
+    "fontSize": 14
+  },
+  "project": {
+    "name": "Arcwright",
+    "description": "Storytelling AI — RAG Knowledge Base processing pipeline"
+  }
+}
