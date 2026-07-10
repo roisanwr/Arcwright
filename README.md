@@ -88,7 +88,8 @@ Arcwright/
 
 ## ✅ What's Complete
 
-- **RAG Pipeline** — `forge/` has full PDF extraction → chunking → embedding pipeline
+- **RAG Pipeline** — `forge/` has full document extraction → chunking → embedding pipeline
+- **Multi-Format Support** — PDF, EPUB, MOBI, AZW3, DOCX, TXT, HTML (v1.1.0)
 - **1 Book Processed** — Robert McKee's *Story* (327 chunks extracted)
 - **8 Agent Roles Designed** — detailed permission tiers, debate protocols, and pipeline flow
 - **Deep Research** — validated LangGraph as framework (score 9.6/10)

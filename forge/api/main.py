@@ -25,10 +25,17 @@ from arcwright import pipeline as arkwright_pipeline
 from arcwright import embed
 
 # ─── App Setup ─────────────────────────────────────────────
+from arcwright.extract import SUPPORTED_FORMATS
+
+# Build supported formats string for docs
+SUPPORTED_FMT_NAMES = ", ".join(
+    f"`{ext}` ({name})" for ext, name in SUPPORTED_FORMATS.items()
+)
+
 app = FastAPI(
-    title="Arwright PDF Pipeline",
-    description="Extract, chunk, embed any PDF — download results or query via RAG",
-    version="1.0.0",
+    title="Arwright Document Pipeline",
+    description=f"Extract, chunk, embed any document — download results or query via RAG. Supports: {SUPPORTED_FMT_NAMES}",
+    version="1.1.0",
 )
 
 app.add_middleware(
@@ -84,58 +91,71 @@ def run_pipeline_job(job_id: str, pdf_path: str, collection_name: str, force_ocr
 @app.get("/")
 def root():
     return {
-        "service": "Arwright PDF Pipeline",
-        "version": "1.0.0",
+        "service": "Arwright Document Pipeline",
+        "version": "1.1.0",
+        "supported_formats": {k: v for k, v in SUPPORTED_FORMATS.items()},
         "docs": "/docs",
         "endpoints": {
-            "upload": "POST /upload — Upload PDF",
+            "upload": "POST /upload — Upload document (PDF, EPUB, MOBI, DOCX, TXT, HTML)",
             "status": "GET /status/{job_id} — Check processing status",
             "download_md": "GET /download/{job_id}/markdown — Download extracted markdown",
             "download_chunks": "GET /download/{job_id}/chunks — Download chunks JSON",
             "collections": "GET /collections — List all ChromaDB collections",
             "chat": "POST /chat/{collection_name} — Q&A (bonus)",
-        }
+        },
     }
 
 
 @app.post("/upload")
-async def upload_pdf(
+async def upload_file(
     file: UploadFile = File(...),
     collection_name: Optional[str] = Form(None),
     force_ocr: bool = Form(True),
 ):
     """
-    Upload a PDF file and start the extraction pipeline.
+    Upload a document and start the extraction pipeline.
     The pipeline runs in the background — check /status/{job_id} for progress.
+
+    Supported formats: PDF, EPUB, MOBI, AZW3, DOCX, TXT, HTML
     """
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(400, "Only PDF files are supported")
-    
+    # Validate file extension
+    ext = Path(file.filename).suffix.lower() if file.filename else ""
+    if ext not in SUPPORTED_FORMATS:
+        supported = ", ".join(SUPPORTED_FORMATS.keys())
+        raise HTTPException(
+            400,
+            f"Unsupported format '{ext}'. Supported: {supported}"
+        )
+
+    fmt_name = SUPPORTED_FORMATS.get(ext, ext)
+    print(f"📥 Upload: {file.filename} ({fmt_name})")
+
     # Create job
     job_id = str(uuid.uuid4())[:8]
     safe_name = file.filename.replace(" ", "_")
-    
+
     # Save uploaded file
     upload_path = UPLOAD_DIR / f"{job_id}_{safe_name}"
     with open(upload_path, "wb") as f:
         content = await file.read()
         f.write(content)
-    
+
     # Set collection name
     if collection_name is None:
         collection_name = Path(safe_name).stem
         collection_name = "".join(c for c in collection_name if c.isalnum() or c in "_")
         collection_name = collection_name[:50]
-    
+
     # Track job
     jobs[job_id] = {
         "status": "processing",
         "filename": file.filename,
+        "format": fmt_name,
         "collection": collection_name,
         "outputs": {},
         "stats": {},
     }
-    
+
     # Start background pipeline
     thread = threading.Thread(
         target=run_pipeline_job,
@@ -143,10 +163,11 @@ async def upload_pdf(
         daemon=True,
     )
     thread.start()
-    
+
     return {
         "job_id": job_id,
         "filename": file.filename,
+        "format": fmt_name,
         "collection": collection_name,
         "status": "processing",
         "check_status": f"/status/{job_id}",
