@@ -1,0 +1,92 @@
+{
+  "batch_date": "2026-07-10 19:59:17",
+  "total_books": 10,
+  "completed": 9,
+  "failed": 1,
+  "total_chunks": 253,
+  "unified_collection": "storytelling_books",
+  "chroma_dir": "/home/rois/Arcwright/forge/output/chroma_db",
+  "total_time_s": 6525.1,
+  "books": [
+    {
+      "file": "/home/rois/Arcwright/forge/data/books/Building a StoryBrand 2.0 Clarify Your Message So Customers Will Listen (Donald Miller).epub",
+      "collection": "Building_a_StoryBrand_2_0_Clarify_Your_Message_So_",
+      "chunks": 77,
+      "status": "completed",
+      "time_s": 5.8,
+      "error": null
+    },
+    {
+      "file": "/home/rois/Arcwright/forge/data/books/On Writing - A Memoir Of The Craft (Stephen King).epub",
+      "collection": "On_Writing___A_Memoir_Of_The_Craft__Stephen_King_",
+      "chunks": 4,
+      "status": "completed",
+      "time_s": 0.2,
+      "error": null
+    },
+    {
+      "file": "/home/rois/Arcwright/forge/data/books/Preview-Contagious-by-Jonah-Berger.pdf",
+      "collection": "Preview_Contagious_by_Jonah_Berger",
+      "chunks": 4,
+      "status": "completed",
+      "time_s": 78.0,
+      "error": null
+    },
+    {
+      "file": "/home/rois/Arcwright/forge/data/books/Robert McKee - Story (pdf).pdf",
+      "collection": null,
+      "chunks": 0,
+      "status": "error",
+      "time_s": 1826.1,
+      "error": "Expected IDs to be unique, found duplicates of: Robert McKee - Story_78e5efea in add."
+    },
+    {
+      "file": "/home/rois/Arcwright/forge/data/books/Save The Cat The Last Book on Screenwriting Youll Ever Need (Blake Snyder).pdf",
+      "collection": "Save_The_Cat_The_Last_Book_on_Screenwriting_Youll_",
+      "chunks": 7,
+      "status": "completed",
+      "time_s": 734.0,
+      "error": null
+    },
+    {
+      "file": "/home/rois/Arcwright/forge/data/books/Story Genius - How to Use Brain Science to Go Beyond Outlining and Write a Riveting Novel (Lisa Cron).epub",
+      "collection": "Story_Genius___How_to_Use_Brain_Science_to_Go_Beyo",
+      "chunks": 2,
+      "status": "completed",
+      "time_s": 0.2,
+      "error": null
+    },
+    {
+      "file": "/home/rois/Arcwright/forge/data/books/The Anatomy of Story 22 Steps to Becoming a Master Storyteller (John Truby).pdf",
+      "collection": "The_Anatomy_of_Story_22_Steps_to_Becoming_a_Master",
+      "chunks": 37,
+      "status": "completed",
+      "time_s": 1759.9,
+      "error": null
+    },
+    {
+      "file": "/home/rois/Arcwright/forge/data/books/The Hero with a Thousand Faces Commemorative Edition (Joseph Campbell, Clarissa Pinkola Estes).pdf",
+      "collection": "The_Hero_with_a_Thousand_Faces_Commemorative_Editi",
+      "chunks": 11,
+      "status": "completed",
+      "time_s": 2111.9,
+      "error": null
+    },
+    {
+      "file": "/home/rois/Arcwright/forge/data/books/The Science of Storytelling Why Stories Make Us Human, and How to Tell Them Better (Will Storr).epub",
+      "collection": "The_Science_of_Storytelling_Why_Stories_Make_Us_Hu",
+      "chunks": 30,
+      "status": "completed",
+      "time_s": 2.4,
+      "error": null
+    },
+    {
+      "file": "/home/rois/Arcwright/forge/data/books/Wired for story the writers guide to using brain science to hook readers from the very first sentence (Lisa Cron).epub",
+      "collection": "Wired_for_story_the_writers_guide_to_using_brain_s",
+      "chunks": 81,
+      "status": "completed",
+      "time_s": 6.7,
+      "error": null
+    }
+  ]
+}

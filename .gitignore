@@ -10,12 +10,16 @@ build/
 # Virtual environment
 venv/
 
-# Data / large files
-data/books/*.pdf
-data/extracted/
+# Source books — only results (chunks) get pushed
+forge/data/books/
+forge/data/extracted/
+forge/data/*.json
 
-# ChromaDB (regenerate dari script)
-chroma_db/
+# ChromaDB vector store (regenerate from chunks.json)
+forge/output/chroma_db/
+
+# Temp uploads
+forge/uploads/
 
 # OS
 .DS_Store
@@ -29,3 +33,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Node
+node_modules/
