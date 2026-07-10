@@ -14,7 +14,6 @@ import os
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
 
 from agents.state import AgentNote, ArcwrightState
 
@@ -66,7 +65,7 @@ def _get_llm() -> ChatOpenAI:
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         raise EnvironmentError("OPENAI_API_KEY environment variable is not set.")
-    return ChatOpenAI(model=MODEL_NAME, temperature=0.4, api_key=api_key)
+    return get_llm_for_agent("deep_dive")
 
 
 def _format_fragments(state: ArcwrightState) -> str:

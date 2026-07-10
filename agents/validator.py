@@ -12,7 +12,6 @@ import logging
 import os
 from datetime import datetime
 
-from langchain_openai import ChatOpenAI
 
 from agents.state import AgentNote, ArcwrightState, ValidationResult
 

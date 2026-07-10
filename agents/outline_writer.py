@@ -12,7 +12,6 @@ import json
 import logging
 import os
 
-from langchain_openai import ChatOpenAI
 
 from agents.state import AgentNote, ArcwrightState, StoryOutline
 
@@ -20,13 +19,10 @@ logger = logging.getLogger(__name__)
 
 # ─── LLM ──────────────────────────────────────────────────────────────────────
 
-def _get_llm() -> ChatOpenAI:
-    """Lazy LLM init — avoids crash on import when API key not set."""
-    return ChatOpenAI(
-        model="gpt-4o-mini",
-        temperature=0.7,
-        api_key=os.environ.get("OPENAI_API_KEY"),
-    )
+def _get_llm():
+    """Lazy LLM init via factory — supports any provider."""
+    from config.settings import get_llm_for_agent
+    return get_llm_for_agent("outline_writer")
 
 # ─── Prompt ───────────────────────────────────────────────────────────────────
 

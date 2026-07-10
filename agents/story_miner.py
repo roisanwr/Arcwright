@@ -14,7 +14,6 @@ import os
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
 
 from agents.state import ArcwrightState, StoryFragment
 
@@ -88,7 +87,7 @@ def _get_llm() -> ChatOpenAI:
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         raise EnvironmentError("OPENAI_API_KEY environment variable is not set.")
-    return ChatOpenAI(model=MODEL_NAME, temperature=0.7, api_key=api_key)
+    return get_llm_for_agent("story_miner")
 
 
 def _count_human_messages(state: ArcwrightState) -> int:

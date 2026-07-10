@@ -12,7 +12,6 @@ from __future__ import annotations
 import logging
 import os
 
-from langchain_openai import ChatOpenAI
 
 from agents.state import AgentNote, ArcwrightState, OutputScript
 
@@ -28,13 +27,10 @@ def _get_llm() -> ChatOpenAI:
         api_key=os.environ.get("OPENAI_API_KEY"),
     )
 
-def _get_critic_llm() -> ChatOpenAI:
-    """Lazy critic LLM init."""
-    return ChatOpenAI(
-        model="gpt-4o-mini",
-        temperature=0.3,
-        api_key=os.environ.get("OPENAI_API_KEY"),
-    )
+def _get_critic_llm():
+    """Lazy critic LLM init via factory."""
+    from config.settings import get_llm_for_agent
+    return get_llm_for_agent("script_critic")
 
 # ─── Prompts ──────────────────────────────────────────────────────────────────
 
