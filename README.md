@@ -1,51 +1,71 @@
-# Storytelling AI — RAG Knowledge Base
+# Arcwright — PDF Pipeline
 
-Multi-agent storytelling system powered by LangGraph + RAG.
-This repo contains the RAG pipeline for processing storytelling books.
+Extract, chunk, embed any PDF. Download results or query via RAG.
+All **free & open-source** — no API keys needed.
 
-## 📁 Struktur Proyek
+## Features
+- 📄 **Upload any PDF** — drag & drop
+- 🔍 **OCR** for scanned/image-based PDFs (marker-pdf)
+- ✂️ **Semantic chunking** by heading structure
+- 🧠 **BGE-M3 embeddings** (1024-dim, multilingual)
+- 🗄️ **ChromaDB** vector storage
+- 📥 **Download** extracted markdown + chunks JSON
+- 🧪 **Test RAG** with Q&A interface
+- 🔗 **Reusable** — ChromaDB collections accessible from any Python project
 
-```
-storytelling-ai/
-├── data/
-│   ├── books/                  ← PDF buku asli
-│   │   └── Robert McKee - Story (pdf).pdf
-│   ├── extracted/              ← Hasil OCR (markdown)
-│   │   └── Robert McKee - Story (pdf).md
-│   └── chunks.json             ← 327 chunks siap RAG
-├── src/
-│   ├── 01-extract-pdf.py       ← PDF → Markdown (pake marker-pdf)
-│   ├── 02-chunk-markdown.py    ← Markdown → Chunks per konsep
-│   └── 03-embed-and-test.py    ← Chunks → Embedding → ChromaDB + Test
-├── chroma_db/                  ← Vector database
-├── venv/                       ← Virtual environment
-├── requirements.txt
-└── .gitignore
-```
+## Tech Stack
+| Component | Tech | License |
+|-----------|------|---------|
+| Backend | FastAPI + Uvicorn | MIT |
+| Frontend | React + Vite + Tailwind | MIT |
+| PDF Extraction | marker-pdf | MIT/GPL/Apache |
+| Embeddings | BAAI/bge-m3 (sentence-transformers) | MIT |
+| Vector DB | ChromaDB | Apache 2.0 |
+| Hybrid Search | rank_bm25 | Apache 2.0 |
 
-## 🚀 Cara Pakai
+## Quick Start
 
+### Backend
 ```bash
-# 1. Aktifkan venv
 source venv/bin/activate
-
-# 2. Ekstrak PDF baru
-python src/01-extract-pdf.py
-
-# 3. Chunk hasil ekstraksi
-python src/02-chunk-markdown.py
-
-# 4. Embed + simpan ke ChromaDB
-python src/03-embed-and-test.py
+python api/main.py
+# → http://localhost:8765
+# → API docs: http://localhost:8765/docs
 ```
 
-## 📊 Status RAG
+### Frontend
+```bash
+cd frontend
+npm install
+npm run dev
+# → http://localhost:5173
+```
 
-| Buku | Status | Chunks |
-|------|--------|--------|
-| Robert McKee — Story | ✅ Done | 327 |
+## API Endpoints
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/upload` | POST | Upload PDF (multipart/form-data) |
+| `/status/{job_id}` | GET | Check processing status |
+| `/download/{job_id}/markdown` | GET | Download extracted markdown |
+| `/download/{job_id}/chunks` | GET | Download chunks JSON |
+| `/collections` | GET | List all ChromaDB collections |
+| `/chat/{collection_name}` | POST | Q&A (test RAG quality) |
 
-## 🧠 Chunking Strategy
+## Outputs
+- **extracted.md** — Full text from PDF with OCR
+- **chunks.json** — Structured chunks with metadata
+- **ChromaDB collection** — Vector embeddings, queryable from Python
 
-Tiap chunk dipotong per konsep (`###` heading), bukan per halaman.
-Ini bikin retrievel lebih presisi — pas query "inciting incident", dapet langsung bab spesifik.
+## Python Usage (Other Projects)
+```python
+import chromadb
+from chromadb.config import Settings
+
+client = chromadb.PersistentClient(
+    path="path/to/arcwright/output/chroma_db",
+    settings=Settings(anonymized_telemetry=False)
+)
+
+collection = client.get_collection("your_collection_name")
+results = collection.query(...)
+```
