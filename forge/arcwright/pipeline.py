@@ -28,9 +28,10 @@ def run_pipeline(
     skip_embed: bool = False,
     use_refiner: bool = False,
     use_strategy: bool = True,
+    use_enhancer: bool = False,
 ) -> dict:
     """
-    Run the full pipeline: Extract → Cleanup → Analyze → Chunk → Refine → Embed.
+    Run the full pipeline: Extract → Cleanup → Analyze → Chunk → Refine → Enhance → Embed.
 
     Supports: PDF, EPUB, MOBI, AZW3, DOCX, TXT, HTML
 
@@ -46,6 +47,7 @@ def run_pipeline(
         skip_embed: If True, stop after chunking (don't embed or store)
         use_refiner: If True, run GPU semantic refiner on flagged chunks
         use_strategy: If True, run strategy analyzer before chunking
+        use_enhancer: If True, run LLM contextual enhancer on chunks
 
     Returns:
         Dict with pipeline results
@@ -99,7 +101,7 @@ def run_pipeline(
     try:
         # ─── Step 1: Extract ───────────────────────────────────
         print(f"\n{'='*50}")
-        print(f"📄 STEP 1/4: Extracting content")
+        print(f"📄 STEP 1/7: Extracting content")
         print(f"{'='*50}")
 
         step_start = time.time()
@@ -119,7 +121,7 @@ def run_pipeline(
 
         # ─── Step 2: Cleanup ────────────────────────────────────
         print(f"\n{'='*50}")
-        print(f"🧹 STEP 2/4: Cleaning markdown")
+        print(f"🧹 STEP 2/7: Cleaning markdown")
         print(f"{'='*50}")
 
         step_start = time.time()
@@ -145,7 +147,7 @@ def run_pipeline(
         strategy_config = {}
         if use_strategy:
             print(f"\n{'='*50}")
-            print(f"🧠 STEP 2.5/6: Analyzing structure & strategy")
+            print(f"🧠 STEP 2.5/7: Analyzing structure & strategy")
             print(f"{'='*50}")
 
             from . import strategy
@@ -176,7 +178,7 @@ def run_pipeline(
 
         # ─── Step 3: Chunk ─────────────────────────────────────
         print(f"\n{'='*50}")
-        print(f"✂️  STEP 3/6: Chunking content")
+        print(f"✂️  STEP 3/7: Chunking content")
         print(f"{'='*50}")
 
         step_start = time.time()
@@ -217,7 +219,7 @@ def run_pipeline(
         # ─── Step 3.5: Semantic Refinement (optional) ─────────
         if use_refiner:
             print(f"\n{'='*50}")
-            print(f"🎯 STEP 3.5/6: Semantic refinement (GPU)")
+            print(f"🎯 STEP 3.5/7: Semantic refinement (GPU)")
             print(f"{'='*50}")
 
             if not config.USE_GPU:
@@ -246,10 +248,40 @@ def run_pipeline(
         else:
             results["stats"]["refiner"] = {"skipped": True}
 
+        # ─── Step 3.75: Contextual Enhancement (optional) ───────
+        if use_enhancer:
+            print(f"\n{'='*50}")
+            print(f"🌟 STEP 3.75/7: Contextual enhancement (LLM)")
+            print(f"{'='*50}")
+
+            from . import enhancer
+            enh = enhancer.ContextualEnhancer(
+                batch_size=config.ENHANCER_BATCH_SIZE
+            )
+            chunks_list = enh.enhance_all(chunks_list, cleaned)
+
+            # Save enhanced chunks
+            enhance_path = file_output / "chunks_enhanced.json"
+            with open(enhance_path, "w", encoding="utf-8") as f:
+                json.dump(chunks_list, f, indent=2, ensure_ascii=False)
+
+            enh_stats = enhancer.ContextualEnhancer.get_enhancer_stats(
+                chunks_list, chunks_list
+            )
+            results["outputs"]["chunks_enhanced"] = str(enhance_path)
+            results["stats"]["enhancer"] = {
+                "enhanced": enh_stats["enhanced"],
+                "enhanced_pct": enh_stats["enhanced_pct"],
+                "avg_context_len": enh_stats["avg_context_len"],
+            }
+            print(f"  Saved enhanced chunks to: {enhance_path}")
+        else:
+            results["stats"]["enhancer"] = {"skipped": True}
+
         # ─── Step 4: Embed & Store (optional) ─────────────────
         if not skip_embed:
             print(f"\n{'='*50}")
-            print(f"🧠 STEP 4/6: Embedding & storing to ChromaDB")
+            print(f"🧠 STEP 4/7: Embedding & storing to ChromaDB")
             print(f"{'='*50}")
 
             from . import embed
@@ -259,7 +291,7 @@ def run_pipeline(
             results["stats"]["embed"] = embed_stats
         else:
             print(f"\n{'='*50}")
-            print(f"⏭️  STEP 4/6: Skipped (skip_embed=True)")
+            print(f"⏭️  STEP 5/7: Skipped (skip_embed=True)")
             print(f"{'='*50}")
             results["stats"]["embed"] = {"skipped": True}
 

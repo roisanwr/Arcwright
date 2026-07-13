@@ -47,5 +47,10 @@ LLM_API_URL = os.getenv("LLM_API_URL", "")
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 LLM_MODEL = os.getenv("LLM_MODEL", "")
 
+# ─── Contextual Enhancer (Layer 6) ────────────────────────
+# Requires USE_LLM=True
+ENHANCER_BATCH_SIZE = 10     # Chunks per LLM call
+ENHANCER_MAX_CHARS = 600     # Max chars from chunk sent to LLM for context
+
 # ─── ChromaDB ─────────────────────────────────────────────
 CHROMA_COLLECTION_PREFIX = "arcwright_"

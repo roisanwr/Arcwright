@@ -1,7 +1,7 @@
 """Arwright — PDF extraction, chunking, embedding pipeline.
 
-Modules with heavy dependencies (embed, extract, refiner, utils.llm) are
-lazy-loaded on first use to avoid import errors when dependencies are missing.
+Modules with heavy dependencies (embed, extract, refiner, enhancer, utils.llm)
+are lazy-loaded on first use to avoid import errors.
 """
 from . import config
 from . import cleanup
@@ -26,6 +26,11 @@ def get_refiner():
 def get_strategy():
     from . import strategy
     return strategy
+
+
+def get_enhancer():
+    from . import enhancer
+    return enhancer
 
 
 def get_pipeline():
