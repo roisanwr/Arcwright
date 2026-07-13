@@ -33,6 +33,11 @@ def get_enhancer():
     return enhancer
 
 
+def get_boundary():
+    from . import boundary
+    return boundary
+
+
 def get_pipeline():
     from . import pipeline
     return pipeline

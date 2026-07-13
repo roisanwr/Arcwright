@@ -29,9 +29,10 @@ def run_pipeline(
     use_refiner: bool = False,
     use_strategy: bool = True,
     use_enhancer: bool = False,
+    use_boundary: bool = True,
 ) -> dict:
     """
-    Run the full pipeline: Extract → Cleanup → Analyze → Chunk → Refine → Enhance → Embed.
+    Run the full pipeline: Extract → Cleanup → Boundary → Analyze → Chunk → Refine → Enhance → Embed.
 
     Supports: PDF, EPUB, MOBI, AZW3, DOCX, TXT, HTML
 
@@ -48,6 +49,7 @@ def run_pipeline(
         use_refiner: If True, run GPU semantic refiner on flagged chunks
         use_strategy: If True, run strategy analyzer before chunking
         use_enhancer: If True, run LLM contextual enhancer on chunks
+        use_boundary: If True, run boundary detection to filter sections
 
     Returns:
         Dict with pipeline results
@@ -143,11 +145,42 @@ def run_pipeline(
         results["outputs"]["cleaned"] = str(clean_path)
         print(f"  Saved to: {clean_path}")
 
+        # ─── Step 2.25: Boundary Detection (optional) ──────────
+        boundary_sections = []
+        if use_boundary:
+            print(f"\n{'='*50}")
+            print(f"🚧 STEP 2.25/8: Detecting document boundaries")
+            print(f"{'='*50}")
+
+            from . import boundary
+            boundary_sections = boundary.detect_sections(cleaned, source_name=file_name)
+            b_stats = boundary.get_boundary_stats(boundary_sections)
+
+            print(f"  Sections: {b_stats['total_sections']} total "
+                  f"({b_stats['content']} content, {b_stats['meta']} meta, "
+                  f"{b_stats['skip']} skip)")
+            if b_stats['labels']:
+                print(f"  Labels: {', '.join(b_stats['labels'][:8])}")
+            if b_stats['skip'] > 0:
+                print(f"  🗑️  {b_stats['skip']} SKIP sections will be excluded")
+
+            # Apply boundaries: filter out SKIP sections from cleaned text
+            cleaned = boundary.apply_boundaries(cleaned, boundary_sections)
+
+            results["stats"]["boundary"] = {
+                "total_sections": b_stats["total_sections"],
+                "content": b_stats["content"],
+                "meta": b_stats["meta"],
+                "skip": b_stats["skip"],
+            }
+        else:
+            results["stats"]["boundary"] = {"skipped": True}
+
         # ─── Step 2.5: Strategy Analysis (optional) ────────────
         strategy_config = {}
         if use_strategy:
             print(f"\n{'='*50}")
-            print(f"🧠 STEP 2.5/7: Analyzing structure & strategy")
+            print(f"🧠 STEP 2.5/8: Analyzing structure & strategy")
             print(f"{'='*50}")
 
             from . import strategy
@@ -178,7 +211,7 @@ def run_pipeline(
 
         # ─── Step 3: Chunk ─────────────────────────────────────
         print(f"\n{'='*50}")
-        print(f"✂️  STEP 3/7: Chunking content")
+        print(f"✂️  STEP 3/8: Chunking content")
         print(f"{'='*50}")
 
         step_start = time.time()
@@ -219,7 +252,7 @@ def run_pipeline(
         # ─── Step 3.5: Semantic Refinement (optional) ─────────
         if use_refiner:
             print(f"\n{'='*50}")
-            print(f"🎯 STEP 3.5/7: Semantic refinement (GPU)")
+            print(f"🎯 STEP 3.5/8: Semantic refinement (GPU)")
             print(f"{'='*50}")
 
             if not config.USE_GPU:
@@ -251,7 +284,7 @@ def run_pipeline(
         # ─── Step 3.75: Contextual Enhancement (optional) ───────
         if use_enhancer:
             print(f"\n{'='*50}")
-            print(f"🌟 STEP 3.75/7: Contextual enhancement (LLM)")
+            print(f"🌟 STEP 3.75/8: Contextual enhancement (LLM)")
             print(f"{'='*50}")
 
             from . import enhancer
@@ -281,7 +314,7 @@ def run_pipeline(
         # ─── Step 4: Embed & Store (optional) ─────────────────
         if not skip_embed:
             print(f"\n{'='*50}")
-            print(f"🧠 STEP 4/7: Embedding & storing to ChromaDB")
+            print(f"🧠 STEP 4/8: Embedding & storing to ChromaDB")
             print(f"{'='*50}")
 
             from . import embed
@@ -291,7 +324,7 @@ def run_pipeline(
             results["stats"]["embed"] = embed_stats
         else:
             print(f"\n{'='*50}")
-            print(f"⏭️  STEP 5/7: Skipped (skip_embed=True)")
+            print(f"⏭️  STEP 5/8: Skipped (skip_embed=True)")
             print(f"{'='*50}")
             results["stats"]["embed"] = {"skipped": True}
 
