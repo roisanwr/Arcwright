@@ -12,7 +12,7 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
-from . import extract, cleanup, chunk, embed
+from . import extract, cleanup, chunk
 from . import config
 
 
@@ -26,9 +26,10 @@ def run_pipeline(
     min_chars: int = None,
     max_chars: int = None,
     skip_embed: bool = False,
+    use_refiner: bool = False,
 ) -> dict:
     """
-    Run the full pipeline: Extract → Cleanup → Chunk → Embed → Store.
+    Run the full pipeline: Extract → Cleanup → Chunk → Refine → Embed.
 
     Supports: PDF, EPUB, MOBI, AZW3, DOCX, TXT, HTML
 
@@ -42,6 +43,7 @@ def run_pipeline(
         min_chars: Minimum chars per chunk
         max_chars: Maximum chars before flagging for semantic refiner
         skip_embed: If True, stop after chunking (don't embed or store)
+        use_refiner: If True, run GPU semantic refiner on flagged chunks
 
     Returns:
         Dict with pipeline results
@@ -177,19 +179,52 @@ def run_pipeline(
             print(f"  ⚠️  {chunk_stats['refiner_needed']} chunks flagged for semantic refiner")
         print(f"  Saved to: {chunks_path}")
 
+        # ─── Step 3.5: Semantic Refinement (optional) ─────────
+        if use_refiner:
+            print(f"\n{'='*50}")
+            print(f"🎯 STEP 3.5/5: Semantic refinement (GPU)")
+            print(f"{'='*50}")
+
+            if not config.USE_GPU:
+                print(f"  ⚠️  USE_GPU=False in config — forcing GPU mode for this run")
+                # Temporarily enable for this pipeline call
+
+            from . import refiner as refiner_module
+            ref = refiner_module.SemanticRefiner(device="auto")
+            chunks_list = ref.refine_all(chunks_list)
+
+            # Recalculate stats after refinement
+            chunk_stats = chunk.get_chunk_stats(chunks_list)
+
+            # Save refined chunks
+            refine_path = file_output / "chunks_refined.json"
+            with open(refine_path, "w", encoding="utf-8") as f:
+                json.dump(chunks_list, f, indent=2, ensure_ascii=False)
+            results["outputs"]["chunks_refined"] = str(refine_path)
+            results["stats"]["refiner"] = {
+                "chunks_after": chunk_stats["count"],
+                "avg_chars": chunk_stats["avg_chars"],
+                "min_chars": chunk_stats["min_chars"],
+                "max_chars": chunk_stats["max_chars"],
+            }
+            print(f"  Saved refined chunks to: {refine_path}")
+        else:
+            results["stats"]["refiner"] = {"skipped": True}
+
         # ─── Step 4: Embed & Store (optional) ─────────────────
         if not skip_embed:
             print(f"\n{'='*50}")
-            print(f"🧠 STEP 4/4: Embedding & storing to ChromaDB")
+            print(f"🧠 STEP 4/5: Embedding & storing to ChromaDB")
             print(f"{'='*50}")
 
+            from . import embed
             embed_stats = embed.embed_and_store(chunks_list, collection_name)
 
             results["outputs"]["chroma_collection"] = collection_name
             results["stats"]["embed"] = embed_stats
         else:
             print(f"\n{'='*50}")
-            print(f"⏭️  STEP 4/4: Skipped (skip_embed=True)")
+            print(f"⏭️  STEP 4/5: Skipped (skip_embed=True)")
             print(f"{'='*50}")
             results["stats"]["embed"] = {"skipped": True}
 
