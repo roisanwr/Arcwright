@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=69.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "arcwright-forge"
+version = "2.0.0"
+description = "Multi-strategy document chunking engine for RAG pipelines"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Arcwright Project"},
+]
+keywords = ["rag", "chunking", "nlp", "vector-database", "llm", "embedding"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "License :: OSI Approved :: MIT License",
+]
+
+requires-python = ">=3.10"
+dependencies = [
+    "sentence-transformers>=3.0.0",
+    "chromadb>=0.6.0",
+    "numpy>=1.24.0",
+    "scikit-learn>=1.3.0",
+]
+
+[project.optional-dependencies]
+all = [
+    "marker-pdf>=1.0.0",
+    "ebooklib>=0.18",
+    "python-docx>=1.0.0",
+    "markdownify>=0.12.0",
+    "beautifulsoup4>=4.12.0",
+    "mobi>=0.4.0",
+    "lxml>=5.0.0",
+    "torch>=2.0.0",
+    "openai>=1.0.0",
+]
+gpu = ["torch>=2.0.0"]
+llm = ["openai>=1.0.0"]
+extract = [
+    "marker-pdf>=1.0.0",
+    "ebooklib>=0.18",
+    "python-docx>=1.0.0",
+    "markdownify>=0.12.0",
+    "beautifulsoup4>=4.12.0",
+    "mobi>=0.4.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/your-username/arcwright"
+Repository = "https://github.com/your-username/arcwright"
+
+[project.scripts]
+arcwright = "arcwright.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["arcwright*"]
+
+[tool.setuptools.package-data]
+"arcwright" = ["py.typed"]
