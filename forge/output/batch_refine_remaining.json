@@ -89,10 +89,19 @@
       "avg_before": 3110,
       "avg_after": 1759,
       "cleaned_chars": 735
+    },
+    {
+      "file": "resonate PRESENT VISUAL STORIES THAT TRANSFORM AUDIENCES (Nancy Duarte) (z-library.sk, 1lib.sk, z-lib.sk).epub",
+      "time_s": 46.1,
+      "chunks_before": 153,
+      "chunks_after": 198,
+      "avg_before": 2287,
+      "avg_after": 1760,
+      "cleaned_chars": 1270
     }
   ],
   "failed": [],
   "started_at": 1783921322.3957984,
-  "chunks_before": 2608,
-  "chunks_after": 3333
+  "chunks_before": 2761,
+  "chunks_after": 3531
 }

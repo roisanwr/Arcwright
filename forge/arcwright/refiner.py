@@ -198,8 +198,13 @@ class SemanticRefiner:
         
         return all_chunks
     
-    def _split_one(self, chunk: dict, max_chars: int, threshold: float) -> list:
+    def _split_one(
+        self, chunk: dict, max_chars: int, threshold: float,
+        hard_max: int = 2000,
+    ) -> list:
         """Split a single oversized chunk at topic boundaries."""
+        if hard_max is None:
+            hard_max = config.CHUNK_HARD_MAX_CHARS
         text = chunk["text"]
         
         # If already under max, return as-is
@@ -212,7 +217,8 @@ class SemanticRefiner:
         
         # Edge case: too few sentences to analyze
         if len(sentences) < 6:
-            return [chunk]  # leave as-is
+            # Force-split by sentence count even when too few sentences
+            return self._force_split_by_size(chunk, sentences, hard_max)
         
         # Build sliding windows
         window_size = min(5, max(3, len(sentences) // 10))
@@ -247,7 +253,7 @@ class SemanticRefiner:
         
         breakpoints.append(len(sentences))
         
-        # Build sub-chunks
+        # Build sub-chunks from semantic breakpoints
         sub_chunks = []
         for i in range(len(breakpoints) - 1):
             start = breakpoints[i]
@@ -257,18 +263,176 @@ class SemanticRefiner:
             if len(sub_text) < 50:
                 continue  # skip empty/fragment chunks
             
-            sub_id = hashlib.md5(sub_text[:100].encode()).hexdigest()[:8]
-            sub_chunks.append({
-                "id": f"{chunk['source'][:20]}_{sub_id}",
+            sub_chunk = {
+                "id": f"{chunk['source'][:20]}_sem_{i}",
                 "title": chunk["title"],
                 "section": chunk["section"],
                 "source": chunk["source"],
                 "text": sub_text,
                 "char_count": len(sub_text),
                 "refiner_needed": False,
+            }
+            
+            # Force-split if this sub-chunk still exceeds hard_max
+            if len(sub_text) > hard_max:
+                sub_sentences = self._split_sentences(sub_text)
+                forced = self._force_split_chunk(chunk, sub_sentences, hard_max, f"force_{i}")
+                sub_chunks.extend(forced)
+            else:
+                sub_chunks.append(sub_chunk)
+        
+        return sub_chunks if sub_chunks else self._force_split_by_size(chunk, sentences, hard_max)
+
+    def _force_split_chunk(
+        self, original_chunk: dict, sentences: list, hard_max: int, suffix: str
+    ) -> list:
+        """Force-split a list of sentences into chunks ≤ hard_max chars.
+        Falls back to char-level split if a single sentence exceeds hard_max."""
+        if not sentences:
+            return []
+        
+        # Handle single sentence edge case
+        if len(sentences) == 1:
+            text = sentences[0].strip()
+            if len(text) >= hard_max:
+                return self._char_force_split(original_chunk, text, hard_max, suffix)
+            if len(text) >= 50:
+                sub_id = hashlib.md5(text[:100].encode()).hexdigest()[:8]
+                return [{
+                    "id": f"{original_chunk['source'][:20]}_{sub_id}",
+                    "title": original_chunk["title"],
+                    "section": original_chunk["section"],
+                    "source": original_chunk["source"],
+                    "text": text,
+                    "char_count": len(text),
+                    "refiner_needed": False,
+                }]
+            return []
+        
+        chunks = []
+        current = []
+        current_len = 0
+        
+        for sent in sentences:
+            sent_stripped = sent.strip()
+            sent_len = len(sent_stripped) + 1  # +1 for space
+            
+            # If a single sentence exceeds hard_max, char-split it inline
+            if sent_len - 1 >= hard_max:
+                # Flush current buffer first
+                if current:
+                    sub_text = " ".join(current).strip()
+                    if len(sub_text) >= 50:
+                        sub_id = hashlib.md5(sub_text[:100].encode()).hexdigest()[:8]
+                        chunks.append({
+                            "id": f"{original_chunk['source'][:20]}_{sub_id}",
+                            "title": original_chunk["title"],
+                            "section": original_chunk["section"],
+                            "source": original_chunk["source"],
+                            "text": sub_text,
+                            "char_count": len(sub_text),
+                            "refiner_needed": False,
+                        })
+                    current = []
+                    current_len = 0
+                # Char-split this monster sentence
+                sub_chars = self._char_force_split(original_chunk, sent_stripped, hard_max, suffix)
+                chunks.extend(sub_chars)
+                continue
+            
+            if current_len + sent_len > hard_max and current:
+                # Save current batch
+                sub_text = " ".join(current).strip()
+                if len(sub_text) >= 50:
+                    sub_id = hashlib.md5(sub_text[:100].encode()).hexdigest()[:8]
+                    chunks.append({
+                        "id": f"{original_chunk['source'][:20]}_{sub_id}",
+                        "title": original_chunk["title"],
+                        "section": original_chunk["section"],
+                        "source": original_chunk["source"],
+                        "text": sub_text,
+                        "char_count": len(sub_text),
+                        "refiner_needed": False,
+                    })
+                current = [sent_stripped]
+                current_len = sent_len
+            else:
+                current.append(sent_stripped)
+                current_len += sent_len
+        
+        # Last batch
+        if current:
+            sub_text = " ".join(current).strip()
+            if len(sub_text) >= 50:
+                sub_id = hashlib.md5(sub_text[:100].encode()).hexdigest()[:8]
+                chunks.append({
+                    "id": f"{original_chunk['source'][:20]}_{sub_id}",
+                    "title": original_chunk["title"],
+                    "section": original_chunk["section"],
+                    "source": original_chunk["source"],
+                    "text": sub_text,
+                    "char_count": len(sub_text),
+                    "refiner_needed": False,
+                })
+        
+        return chunks
+
+    def _char_force_split(
+        self, original_chunk: dict, text: str, hard_max: int, suffix: str
+    ) -> list:
+        """Last-resort char-level split for text that exceeds hard_max.
+        Splits at the last sentence boundary before hard_max, or at hard_max char."""
+        chunks = []
+        while len(text) > hard_max:
+            # Try to find a sentence boundary within range
+            split_at = -1
+            for boundary in ['. ', '! ', '? ', '.\n', '!\n', '?\n', '\n\n', '\n']:
+                idx = text.rfind(boundary, 0, hard_max)
+                if idx > hard_max // 2:  # At least half of max
+                    split_at = idx + len(boundary)
+                    break
+            
+            if split_at == -1:
+                split_at = hard_max  # Hard cut at char limit
+            
+            piece = text[:split_at].strip()
+            if len(piece) >= 50:
+                sub_id = hashlib.md5(piece[:100].encode()).hexdigest()[:8]
+                chunks.append({
+                    "id": f"{original_chunk['source'][:20]}_{sub_id}",
+                    "title": original_chunk["title"],
+                    "section": original_chunk["section"],
+                    "source": original_chunk["source"],
+                    "text": piece,
+                    "char_count": len(piece),
+                    "refiner_needed": False,
+                })
+            text = text[split_at:].strip()
+        
+        # Remaining tail
+        if len(text) >= 50:
+            sub_id = hashlib.md5(text[:100].encode()).hexdigest()[:8]
+            chunks.append({
+                "id": f"{original_chunk['source'][:20]}_{sub_id}",
+                "title": original_chunk["title"],
+                "section": original_chunk["section"],
+                "source": original_chunk["source"],
+                "text": text,
+                "char_count": len(text),
+                "refiner_needed": False,
             })
         
-        return sub_chunks if sub_chunks else [chunk]
+        return chunks
+
+    def _force_split_by_size(
+        self, original_chunk: dict, sentences: list, hard_max: int
+    ) -> list:
+        """Legacy fallback: force-split into chunks ≤ hard_max chars."""
+        if not sentences:
+            return [original_chunk]
+        if len(sentences) < 2:
+            return [original_chunk]
+        return self._force_split_chunk(original_chunk, sentences, hard_max, "fs")
     
     # ── Merge Similar Adjacent Chunks ────────────────────────
     
@@ -324,8 +488,8 @@ class SemanticRefiner:
                 ))
                 
                 combined_size = chunks[i]["char_count"] + chunks[i+1]["char_count"]
-                
-                if sim > threshold and combined_size <= hard_max:
+
+                if sim > threshold and combined_size + 2 <= hard_max:
                     # Merge
                     merged_text = chunks[i]["text"] + "\n\n" + chunks[i+1]["text"]
                     merged_id = hashlib.md5(merged_text[:100].encode()).hexdigest()[:8]

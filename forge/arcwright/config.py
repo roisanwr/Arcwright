@@ -31,8 +31,8 @@ CHUNK_HEADING_LEVELS = [1, 2, 3]
 
 # Chunk size thresholds (characters)
 CHUNK_MIN_CHARS = 150        # Below this → merge with neighbor
-CHUNK_MAX_CHARS = 2500       # Above this → flag for semantic refiner
-CHUNK_HARD_MAX_CHARS = 4000  # Absolute max — force-split at this
+CHUNK_MAX_CHARS = 1500       # Above this → flag for semantic refiner
+CHUNK_HARD_MAX_CHARS = 2000  # Absolute max — force-split at this
 
 # Chunk overlap (characters from previous chunk appended for context)
 CHUNK_OVERLAP_CHARS = 200
