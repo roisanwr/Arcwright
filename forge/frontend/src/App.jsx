@@ -27,7 +27,7 @@ export default function App() {
             </div>
             <div className="min-w-0">
               <h1 className="text-base sm:text-lg font-semibold truncate">Arwright</h1>
-              <p className="text-[10px] sm:text-xs text-gray-500 hidden sm:block">PDF Pipeline</p>
+              <p className="text-[10px] sm:text-xs text-gray-500 hidden sm:block">Document Pipeline</p>
             </div>
           </div>
           <nav className="flex gap-1 sm:gap-2 shrink-0">

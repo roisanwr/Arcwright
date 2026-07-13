@@ -63,18 +63,18 @@ class ChatResponse(BaseModel):
 
 
 # ─── Background Pipeline Runner ────────────────────────────
-def run_pipeline_job(job_id: str, pdf_path: str, collection_name: str, force_ocr: bool):
+def run_pipeline_job(job_id: str, file_path: str, collection_name: str, force_ocr: bool):
     """Run pipeline in background thread."""
     try:
         result = arkwright_pipeline.run_pipeline(
-            pdf_path=pdf_path,
+            file_path=file_path,
             collection_name=collection_name,
             force_ocr=force_ocr,
         )
         jobs[job_id] = {
             "status": result.get("status", "completed"),
             "collection": collection_name,
-            "pdf_name": Path(pdf_path).name,
+            "pdf_name": Path(file_path).name,
             "outputs": result.get("outputs", {}),
             "stats": result.get("stats", {}),
             "error": result.get("error"),

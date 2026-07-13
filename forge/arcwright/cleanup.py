@@ -40,32 +40,45 @@ def _pre_clean_regex(text: str) -> str:
     
     Removes:
     - XML declarations: <?xml version='1.0' encoding='utf-8'?>
+    - XML without <? prefix: xml version='1.0' encoding='utf-8'?
+    - DOCTYPE declarations
+    - CDATA sections
     - Empty heading markers: "### " / "## " / "# " with no text
     - Image references: ![alt](path)
-    - Horizontal rules with dashes: "---" (3+ consecutive)
+    - Horizontal rules: "---" or "***" (3+)
+    - Publisher boilerplate markers: [image], [table], etc.
+    - Footnote/endnote links: [1], [2,3], [1-3]
     - Excessive blank lines (3+ → 2)
     - Leading/trailing whitespace on each line
     """
-    # 1. XML declarations — any <?xml ... ?> variant
-    text = re.sub(r'<\?xml[^>]*\?>', '', text)
+    # 1. XML declarations — with or without <?xml prefix
+    text = re.sub(r'<\?xml[^>]*\?>', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'^xml\s+version=["\'][^"\']*["\'].*$', '', text, flags=re.MULTILINE | re.IGNORECASE)
+    text = re.sub(r'<!DOCTYPE[^>]*>', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'<!\[CDATA\[.*?\]\]>', '', text, flags=re.DOTALL)
     
-    # 2. Empty heading markers — "# " or "## " or "### " or "#### " with nothing after
-    #    Must have ONLY whitespace (or nothing) after the heading marker
+    # 2. Empty heading markers
     text = re.sub(r'^#{1,4}[ \t]*$', '', text, flags=re.MULTILINE)
     
-    # 3. Image references — ![alt text](path) or ![](path)
+    # 3. Image references
     text = re.sub(r'!\[.*?\]\(.*?\)', '', text)
     
-    # 4. Horizontal rules — 3+ dashes on their own line
-    text = re.sub(r'^-{3,}\s*$', '', text, flags=re.MULTILINE)
+    # 4. Horizontal rules
+    text = re.sub(r'^(-|\*){3,}\s*$', '', text, flags=re.MULTILINE)
     
-    # 5. Trim trailing whitespace on every line
+    # 5. Publisher markers
+    text = re.sub(r'\[\s*(image|picture|figure|table)\s*\]', '', text, flags=re.IGNORECASE)
+    
+    # 6. Footnote/endnote links
+    text = re.sub(r'\[\d+([,\-]\d+)*\]', '', text)
+    
+    # 7. Trim trailing whitespace on every line
     text = re.sub(r'[ \t]+$', '', text, flags=re.MULTILINE)
     
-    # 6. Collapse excessive blank lines (3+ → 2)
+    # 8. Collapse excessive blank lines (3+ → 2)
     text = re.sub(r'\n{4,}', '\n\n\n', text)
     
-    # 7. Strip leading/trailing whitespace from whole document
+    # 9. Strip leading/trailing whitespace from whole document
     text = text.strip()
     
     return text

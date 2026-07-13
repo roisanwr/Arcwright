@@ -1,0 +1,98 @@
+{
+  "processed": [
+    {
+      "file": "The Science of Storytelling .pdf",
+      "time_s": 154.1,
+      "chunks_before": 169,
+      "chunks_after": 276,
+      "avg_before": 2847,
+      "avg_after": 1737,
+      "cleaned_chars": 295
+    },
+    {
+      "file": "The Writers Journey Mythic Structure for Writers, Second Edition (Christopher Vogler) (z-library.sk, 1lib.sk, z-lib.sk).pdf",
+      "time_s": 133.0,
+      "chunks_before": 378,
+      "chunks_after": 417,
+      "avg_before": 1792,
+      "avg_after": 1619,
+      "cleaned_chars": 1806
+    },
+    {
+      "file": "The Elements of Style, 2011 Revised Edition (William Strunk, Chris Hong) (z-library.sk, 1lib.sk, z-lib.sk).pdf",
+      "time_s": 44.4,
+      "chunks_before": 38,
+      "chunks_after": 43,
+      "avg_before": 1867,
+      "avg_after": 1644,
+      "cleaned_chars": 0
+    },
+    {
+      "file": "Steering the Craft A Twenty-First-Century Guide to Sailing the Sea of Story. (Ursula K. Le Guin.) (z-library.sk, 1lib.sk, z-lib.sk).pdf",
+      "time_s": 81.0,
+      "chunks_before": 106,
+      "chunks_after": 143,
+      "avg_before": 2146,
+      "avg_after": 1585,
+      "cleaned_chars": 325
+    },
+    {
+      "file": "The Hero with a Thousand Faces Commemorative Edition (Joseph Campbell, Clarissa Pinkola Estes).pdf",
+      "time_s": 199.7,
+      "chunks_before": 418,
+      "chunks_after": 602,
+      "avg_before": 2395,
+      "avg_after": 1649,
+      "cleaned_chars": 2863
+    },
+    {
+      "file": "The storytellers secret  from TED speakers to business legends, why some ideas catch on and others dont (Gallo, Carmine, author) (z-library.sk, 1lib.sk, z-lib.sk).pdf",
+      "time_s": 280.4,
+      "chunks_before": 273,
+      "chunks_after": 409,
+      "avg_before": 2118,
+      "avg_after": 1405,
+      "cleaned_chars": 617
+    },
+    {
+      "file": "Writing Down the Bones. (Natalie Goldberg.) (z-library.sk, 1lib.sk, z-lib.sk).pdf",
+      "time_s": 402.5,
+      "chunks_before": 133,
+      "chunks_after": 187,
+      "avg_before": 2495,
+      "avg_after": 1769,
+      "cleaned_chars": 128
+    },
+    {
+      "file": "The Anatomy of Story 22 Steps to Becoming a Master Storyteller (John Truby).pdf",
+      "time_s": 241.5,
+      "chunks_before": 714,
+      "chunks_after": 750,
+      "avg_before": 1335,
+      "avg_after": 1267,
+      "cleaned_chars": 570
+    },
+    {
+      "file": "Storytelling with Data (Cole Nussbaumer Knaflic) (z-library.sk, 1lib.sk, z-lib.sk).epub",
+      "time_s": 38.7,
+      "chunks_before": 232,
+      "chunks_after": 247,
+      "avg_before": 1657,
+      "avg_after": 1554,
+      "cleaned_chars": 1267
+    },
+    {
+      "file": "The Science of Storytelling Why Stories Make Us Human, and How to Tell Them Better (Will Storr).epub",
+      "time_s": 64.7,
+      "chunks_before": 147,
+      "chunks_after": 259,
+      "avg_before": 3110,
+      "avg_after": 1759,
+      "cleaned_chars": 735
+    }
+  ],
+  "failed": [],
+  "started_at": 1783921322.3957984,
+  "chunks_before": 2608,
+  "chunks_after": 3333
+}

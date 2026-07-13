@@ -1,0 +1,75 @@
+{
+  "results": [
+    {
+      "book": "Story Genius - How to Use Brain Science to Go Beyo",
+      "status": "completed",
+      "chunks": 146,
+      "avg": 3695,
+      "min": 200,
+      "max": 11174,
+      "refiner": 123,
+      "strategy": "hybrid",
+      "book_type": "narration",
+      "cleaned_chars": 509897,
+      "removed_chars": 1419,
+      "time_s": 34.2
+    },
+    {
+      "book": "Save The Cat The Last Book on Screenwriting Youll ",
+      "status": "completed",
+      "chunks": 83,
+      "avg": 3955,
+      "min": 2897,
+      "max": 4200,
+      "refiner": 83,
+      "strategy": "recursive",
+      "book_type": "mixed",
+      "cleaned_chars": 311856,
+      "removed_chars": 167,
+      "time_s": 43.8
+    },
+    {
+      "book": "The Power of Myth (Joseph Campbell, Bill Moyers) (",
+      "status": "completed",
+      "chunks": 147,
+      "avg": 3942,
+      "min": 1625,
+      "max": 4198,
+      "refiner": 146,
+      "strategy": "hybrid",
+      "book_type": "narration",
+      "cleaned_chars": 550248,
+      "removed_chars": 700,
+      "time_s": 39.2
+    },
+    {
+      "book": "TED Talks The Official TED Guide to Public Speakin",
+      "status": "completed",
+      "chunks": 127,
+      "avg": 3601,
+      "min": 337,
+      "max": 5962,
+      "refiner": 107,
+      "strategy": "hybrid",
+      "book_type": "narration",
+      "cleaned_chars": 485935,
+      "removed_chars": 6922,
+      "time_s": 36.9
+    },
+    {
+      "book": "The Storytelling Animal How Stories Make Us Human ",
+      "status": "completed",
+      "chunks": 99,
+      "avg": 3325,
+      "min": 779,
+      "max": 4198,
+      "refiner": 79,
+      "strategy": "heading_based",
+      "book_type": "unknown",
+      "cleaned_chars": 515695,
+      "removed_chars": 2452,
+      "time_s": 46.9
+    }
+  ],
+  "total_time_s": 200.9597728252411
+}

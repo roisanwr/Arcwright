@@ -6,7 +6,10 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 # ─── Directories ───────────────────────────────────────────
-OUTPUT_DIR = PROJECT_ROOT / "output"
+# Note: all data lives under forge/ subdirectory
+DATA_DIR = PROJECT_ROOT / "forge" / "data"
+BOOKS_DIR = DATA_DIR / "books"
+OUTPUT_DIR = PROJECT_ROOT / "forge" / "output"
 CHROMA_DIR = OUTPUT_DIR / "chroma_db"
 
 # Ensure output dirs exist
@@ -14,7 +17,7 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 CHROMA_DIR.mkdir(parents=True, exist_ok=True)
 
 # Temporary upload directory
-UPLOAD_DIR = PROJECT_ROOT / "uploads"
+UPLOAD_DIR = PROJECT_ROOT / "forge" / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 # ─── Models (all free, open source) ────────────────────────
@@ -36,13 +39,13 @@ CHUNK_OVERLAP_CHARS = 200
 
 # ─── Semantic Refiner (Layer 5) ───────────────────────────
 # Requires GPU with CUDA
-USE_GPU = False              # Toggle when running on GPU-enabled machine
+USE_GPU = True              # Toggle when running on GPU-enabled machine
 REFINER_SPLIT_THRESHOLD = 0.7    # Cosine sim below this = topic shift
 REFINER_MERGE_THRESHOLD = 0.95   # Cosine sim above this = merge adjacent
-REFINER_BATCH_SIZE = 64          # Embedding batch size on GPU
+REFINER_BATCH_SIZE = 32          # Embedding batch size on GPU (lowered for 16GB VRAM)
 
 # ─── LLM Services (Layers 2, 3, 6) ────────────────────────
-USE_LLM = False              # Toggle when LLM API available
+USE_LLM = True              # Toggle when LLM API available
 LLM_API_URL = os.getenv("LLM_API_URL", "")
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 LLM_MODEL = os.getenv("LLM_MODEL", "")

@@ -17,7 +17,7 @@ def llm_complete(prompt: str, system: str = None, max_retries: int = 2) -> str:
     Args:
         prompt: The user/content prompt
         system: Optional system message
-        max_retries: Number of retries on failure
+        max_retries: Number of retries on failure (default: 2, min: 1)
     
     Returns:
         Response text, or empty string if LLM not available
@@ -25,7 +25,8 @@ def llm_complete(prompt: str, system: str = None, max_retries: int = 2) -> str:
     if not cfg.USE_LLM or not cfg.LLM_API_URL:
         return ""
     
-    for attempt in range(max_retries):
+    retries = max(max_retries, 1)  # At least 1 attempt
+    for attempt in range(retries):
         try:
             return _call(prompt, system)
         except Exception as e:

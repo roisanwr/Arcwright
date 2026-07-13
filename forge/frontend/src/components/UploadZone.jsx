@@ -8,9 +8,12 @@ export default function UploadZone({ onUploadComplete }) {
   const [error, setError] = useState(null)
   const fileInputRef = useRef(null)
 
+  const SUPPORTED_EXTS = ['.pdf', '.epub', '.mobi', '.azw3', '.docx', '.doc', '.txt', '.html', '.htm']
+
   const handleFile = useCallback(async (file) => {
-    if (!file || !file.name.toLowerCase().endsWith('.pdf')) {
-      setError('Only PDF files are supported')
+    const ext = file?.name?.toLowerCase().match(/\.[^.]*$/)?.[0] || ''
+    if (!file || !SUPPORTED_EXTS.includes(ext)) {
+      setError(`Unsupported format. Accepted: PDF, EPUB, MOBI, AZW3, DOCX, TXT, HTML`)
       return
     }
 
@@ -76,7 +79,7 @@ export default function UploadZone({ onUploadComplete }) {
         <input
           ref={fileInputRef}
           type="file"
-          accept=".pdf"
+          accept=".pdf,.epub,.mobi,.azw3,.docx,.doc,.txt,.html,.htm"
           className="hidden"
           onChange={(e) => handleFile(e.target.files[0])}
         />
@@ -84,16 +87,16 @@ export default function UploadZone({ onUploadComplete }) {
         {uploading ? (
           <div>
             <div className="animate-spin w-8 sm:w-10 h-8 sm:h-10 border-3 border-purple-500 border-t-transparent rounded-full mx-auto mb-3 sm:mb-4" />
-            <p className="text-sm sm:text-base text-gray-400">Uploading &amp; processing PDF...</p>
+            <p className="text-sm sm:text-base text-gray-400">Uploading &amp; processing document...</p>
           </div>
         ) : (
           <div>
             <div className="text-4xl sm:text-5xl mb-3 sm:mb-4">📄</div>
             <p className="text-base sm:text-lg font-medium text-gray-300 mb-1">
-              Drop your PDF here
+              Drop your document here
             </p>
             <p className="text-xs sm:text-sm text-gray-500">
-              or click to browse &mdash; any PDF, any language
+              or click to browse &mdash; PDF, EPUB, MOBI, DOCX, TXT, HTML
             </p>
             {/* Feature tags — stack on mobile, row on larger */}
             <div className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-4 mt-3 sm:mt-4 text-[10px] sm:text-xs text-gray-600">

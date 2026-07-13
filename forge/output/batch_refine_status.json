@@ -1,0 +1,110 @@
+{
+  "processed": [
+    {
+      "file": "Building a StoryBrand 2.0 Clarify Your Message So Customers Will Listen (Donald Miller).epub",
+      "time_s": 57.3,
+      "chunks_before": 159,
+      "chunks_after": 159,
+      "avg_before": 2708,
+      "avg_after": 0
+    },
+    {
+      "file": "Contagious Why Things Catch On (Jonah Berger) (z-library.sk, 1lib.sk, z-lib.sk).epub",
+      "time_s": 64.7,
+      "chunks_before": 159,
+      "chunks_after": 159,
+      "avg_before": 3008,
+      "avg_after": 0
+    },
+    {
+      "file": "How to Tell a Story.pdf",
+      "time_s": 234.7,
+      "chunks_before": 279,
+      "chunks_after": 279,
+      "avg_before": 2226,
+      "avg_after": 0
+    },
+    {
+      "file": "Pixar Storytelling Rules for Effective Storytelling Based on Pixar\u2019s Greatest Films (Dean Movshovitz) (z-library.sk, 1lib.sk, z-lib.sk).pdf",
+      "time_s": 62.1,
+      "chunks_before": 106,
+      "chunks_after": 106,
+      "avg_before": 1705,
+      "avg_after": 0
+    },
+    {
+      "file": "Save The Cat The Last Book on Screenwriting Youll Ever Need (Blake Snyder).pdf",
+      "time_s": 172.0,
+      "chunks_before": 111,
+      "chunks_after": 111,
+      "avg_before": 3087,
+      "avg_after": 0
+    },
+    {
+      "file": "TED Talks The Official TED Guide to Public Speaking (Anderson, Chris) (z-library.sk, 1lib.sk, z-lib.sk).epub",
+      "time_s": 71.7,
+      "chunks_before": 127,
+      "chunks_after": 127,
+      "avg_before": 3601,
+      "avg_after": 0
+    },
+    {
+      "file": "Talk Like TED the 9 Public-Speaking Secrets of the Worlds Top Minds (Carmine Gallo) (z-library.sk, 1lib.sk, z-lib.sk).pdf",
+      "time_s": 173.2,
+      "chunks_before": 248,
+      "chunks_after": 248,
+      "avg_before": 2112,
+      "avg_after": 0
+    },
+    {
+      "file": "Wired for Story (Lisa Cron) (z-library.sk, 1lib.sk, z-lib.sk).pdf",
+      "time_s": 204.5,
+      "chunks_before": 214,
+      "chunks_after": 214,
+      "avg_before": 2449,
+      "avg_after": 0
+    },
+    {
+      "file": "storyworthy.pdf",
+      "time_s": 215.4,
+      "chunks_before": 213,
+      "chunks_after": 213,
+      "avg_before": 2809,
+      "avg_after": 0
+    },
+    {
+      "file": "Into the Woods. A five-act journey into story (John Yorke) (z-library.sk, 1lib.sk, z-lib.sk).epub",
+      "time_s": 71.5,
+      "chunks_before": 135,
+      "chunks_after": 273,
+      "avg_before": 3538,
+      "avg_after": 1742,
+      "cleaned_chars": 10830
+    },
+    {
+      "file": "On Writing - A Memoir Of The Craft (Stephen King).epub",
+      "time_s": 68.8,
+      "chunks_before": 124,
+      "chunks_after": 350,
+      "avg_before": 3755,
+      "avg_after": 1324,
+      "cleaned_chars": 942
+    },
+    {
+      "file": "Robert McKee - Story (pdf).pdf",
+      "time_s": 1898.2,
+      "chunks_before": 394,
+      "chunks_after": 590,
+      "avg_before": 2121,
+      "avg_after": 1411,
+      "cleaned_chars": 1082
+    }
+  ],
+  "failed": [],
+  "current": "storyworthy.pdf",
+  "started_at": 1783918919.923929,
+  "books_total": 0,
+  "chunks_before": 2269,
+  "chunks_after": 2829,
+  "batch": 3
+}

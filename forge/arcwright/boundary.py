@@ -213,11 +213,16 @@ def _detect_with_llm(text: str, source_name: str = "") -> list:
     import json as _json
     try:
         sections = _json.loads(result)
-        # Validate
+        # Validate and normalize keys
         for s in sections:
             s['tag'] = s.get('tag', 'CONTENT').upper()
             if s['tag'] not in ('CONTENT', 'META', 'SKIP'):
                 s['tag'] = 'CONTENT'
+            # Normalize approx_line → line_start / line_end
+            if 'approx_line' in s and 'line_start' not in s:
+                s['line_start'] = s.pop('approx_line')
+            s['line_start'] = max(0, min(s.get('line_start', 0), len(lines) - 1))
+            s['line_end'] = s.get('line_end', len(lines) - 1)
         return sections
     except (_json.JSONDecodeError, KeyError):
         return []
