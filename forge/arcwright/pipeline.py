@@ -27,9 +27,10 @@ def run_pipeline(
     max_chars: int = None,
     skip_embed: bool = False,
     use_refiner: bool = False,
+    use_strategy: bool = True,
 ) -> dict:
     """
-    Run the full pipeline: Extract → Cleanup → Chunk → Refine → Embed.
+    Run the full pipeline: Extract → Cleanup → Analyze → Chunk → Refine → Embed.
 
     Supports: PDF, EPUB, MOBI, AZW3, DOCX, TXT, HTML
 
@@ -44,6 +45,7 @@ def run_pipeline(
         max_chars: Maximum chars before flagging for semantic refiner
         skip_embed: If True, stop after chunking (don't embed or store)
         use_refiner: If True, run GPU semantic refiner on flagged chunks
+        use_strategy: If True, run strategy analyzer before chunking
 
     Returns:
         Dict with pipeline results
@@ -139,9 +141,42 @@ def run_pipeline(
         results["outputs"]["cleaned"] = str(clean_path)
         print(f"  Saved to: {clean_path}")
 
+        # ─── Step 2.5: Strategy Analysis (optional) ────────────
+        strategy_config = {}
+        if use_strategy:
+            print(f"\n{'='*50}")
+            print(f"🧠 STEP 2.5/6: Analyzing structure & strategy")
+            print(f"{'='*50}")
+
+            from . import strategy
+            strategy_config = strategy.detect_and_configure(
+                cleaned, source_name=file_name
+            )
+            print(strategy.format_report(strategy_config))
+
+            # Apply strategy findings (unless user explicitly overrode)
+            if not use_h4 and strategy_config.get("use_h4"):
+                use_h4 = True
+                print(f"  → Auto-enabled H4 boundaries (recommended)")
+            if heading_levels is None and strategy_config.get("heading_levels"):
+                heading_levels = strategy_config["heading_levels"]
+            if min_chars is None and strategy_config.get("chunk_size_min"):
+                min_chars = strategy_config["chunk_size_min"]
+            if max_chars is None and strategy_config.get("chunk_size_max"):
+                max_chars = strategy_config["chunk_size_max"]
+
+            results["stats"]["strategy"] = {
+                "source": strategy_config.get("_source", "offline"),
+                "strategy": strategy_config.get("strategy", "heading_based"),
+                "book_type": strategy_config.get("book_type", "unknown"),
+                "use_h4": use_h4,
+            }
+        else:
+            results["stats"]["strategy"] = {"skipped": True}
+
         # ─── Step 3: Chunk ─────────────────────────────────────
         print(f"\n{'='*50}")
-        print(f"✂️  STEP 3/4: Chunking content")
+        print(f"✂️  STEP 3/6: Chunking content")
         print(f"{'='*50}")
 
         step_start = time.time()
@@ -182,7 +217,7 @@ def run_pipeline(
         # ─── Step 3.5: Semantic Refinement (optional) ─────────
         if use_refiner:
             print(f"\n{'='*50}")
-            print(f"🎯 STEP 3.5/5: Semantic refinement (GPU)")
+            print(f"🎯 STEP 3.5/6: Semantic refinement (GPU)")
             print(f"{'='*50}")
 
             if not config.USE_GPU:
@@ -214,7 +249,7 @@ def run_pipeline(
         # ─── Step 4: Embed & Store (optional) ─────────────────
         if not skip_embed:
             print(f"\n{'='*50}")
-            print(f"🧠 STEP 4/5: Embedding & storing to ChromaDB")
+            print(f"🧠 STEP 4/6: Embedding & storing to ChromaDB")
             print(f"{'='*50}")
 
             from . import embed
@@ -224,7 +259,7 @@ def run_pipeline(
             results["stats"]["embed"] = embed_stats
         else:
             print(f"\n{'='*50}")
-            print(f"⏭️  STEP 4/5: Skipped (skip_embed=True)")
+            print(f"⏭️  STEP 4/6: Skipped (skip_embed=True)")
             print(f"{'='*50}")
             results["stats"]["embed"] = {"skipped": True}
 
