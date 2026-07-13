@@ -4,9 +4,11 @@ import os, sys, time, json
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-os.environ['LLM_API_URL'] = 'https://opencode.ai/zen/v1'
-os.environ['LLM_API_KEY'] = 'public'
-os.environ['LLM_MODEL'] = 'deepseek-v4-flash-free'
+# LLM configuration for Contextual Enhancer (Layer 6)
+# Default to Ollama local, can be overridden by environment variables
+os.environ.setdefault('LLM_API_URL', 'http://localhost:11434/v1')
+os.environ.setdefault('LLM_API_KEY', 'ollama')
+os.environ.setdefault('LLM_MODEL', 'gemma4:26b')
 
 from arcwright.pipeline import run_pipeline
 from arcwright import config
