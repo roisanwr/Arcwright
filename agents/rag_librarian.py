@@ -36,7 +36,7 @@ def _build_rag_tool():
     """Build the Qdrant retriever tool. Lazy-loaded on first agent call."""
     embeddings = HuggingFaceEmbeddings(
         model_name=settings.EMBEDDING_MODEL,
-        model_kwargs={"device": "cuda"},
+        model_kwargs={"device": "cpu"},
         encode_kwargs={"normalize_embeddings": True},
     )
     qdrant_client = QdrantClient(url=settings.QDRANT_URL)
