@@ -274,7 +274,16 @@ function App() {
                             <p className="text-xs text-gray-500">Storytelling AI · Gemini via 9Router</p>
                         </div>
                     </div>
-                    <StatusBar node={currentNode} message={statusMsg} isProcessing={isProcessing} />
+                    <div className="flex items-center gap-3">
+                        <StatusBar node={currentNode} message={statusMsg} isProcessing={isProcessing} />
+                        <button
+                            onClick={() => window.location.reload()}
+                            title="Mulai Sesi Baru"
+                            className="bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded-full text-xs border border-gray-700 transition-colors"
+                        >
+                            🔄 Reset
+                        </button>
+                    </div>
                 </div>
 
                 {/* Messages */}

@@ -209,6 +209,7 @@ def serve_ui():
 @app.get("/api/start")
 def start_session():
     """Mulai sesi baru Arcwright."""
+    # Generate random session ID baru tiap hit endpoint ini
     session_id = str(uuid.uuid4())
     # Buat queue SEBELUM thread jalan, biar event gak ilang
     session_queues[session_id] = asyncio.Queue()
