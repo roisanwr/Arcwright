@@ -1,233 +1,96 @@
 """
-deep_dive.py — Deep Dive Analysis Agent for Arcwright Storytelling AI.
-
-Performs a structured multi-perspective analysis of the user's story fragments,
-enriched with RAG context. Produces five analytical lenses — Surface,
-Psychological, Universal Theme, Opposing View, and Hidden Gold — that give
-downstream agents rich material to craft compelling narratives.
+Deep Dive Agent — analyzes story from 5 distinct perspectives.
+Runs in parallel with Web Researcher via Send().
 """
+from langgraph.prebuilt import create_react_agent
 
-from __future__ import annotations
+from agents.state import ArcwrightState
 
-import logging
-import os
-from typing import Any
 
-from langchain_core.messages import HumanMessage, SystemMessage
+_SYSTEM_PROMPT = """You are the Deep Dive Agent — a multi-perspective story analyst.
 
-from agents.state import AgentNote, ArcwrightState
+Your job: analyze the story material from 5 distinct perspectives to uncover hidden angles.
 
-logger = logging.getLogger(__name__)
-
-# ─── Constants ────────────────────────────────────────────────────────────────
-
-MODEL_NAME = "gpt-4o-mini"
-
-ANALYSIS_PERSPECTIVES = [
-    "surface",
-    "psychological",
-    "universal_theme",
-    "opposing_view",
-    "hidden_gold",
-]
-
-# ─── System prompt ────────────────────────────────────────────────────────────
-
-DEEP_DIVE_SYSTEM_PROMPT = """Kamu adalah analis cerita profesional dengan keahlian dalam psikologi naratif,
-storytelling lintas budaya, dan ilmu persuasi.
-
-Tugasmu adalah menganalisis story fragments yang diberikan dari 5 perspektif berbeda.
-Gunakan juga rag_context (kutipan buku storytelling) sebagai referensi teknik bila relevan.
-
-FORMAT OUTPUT — kembalikan HANYA JSON object dengan 5 key berikut:
+Given the story fragments, produce this EXACT JSON structure:
 
 {
-  "surface": "Apa yang terjadi secara literal — fakta, urutan kejadian, siapa melakukan apa.",
-  "psychological": "Emosi, motivasi tersembunyi, kebutuhan psikologis yang terlibat. Mengapa orang bereaksi seperti itu?",
-  "universal_theme": "Tema universal apa yang membuat cerita ini relevan bagi banyak orang? Hubungkan dengan pengalaman manusia yang lebih luas.",
-  "opposing_view": "Bagaimana orang lain (dengan perspektif berbeda) mungkin melihat situasi yang sama secara berbeda? Sudut pandang antagonis atau alternatif.",
-  "hidden_gold": "Detail paling kuat, mengejutkan, atau emosional yang harus ditonjolkan. Ini adalah 'bintang' dari cerita ini."
+  "surface": "What is literally happening? The concrete facts of the story.",
+  "psychological": "What emotions and motivations are driving the characters? What internal conflict exists?",
+  "universal": "What bigger human truth does this story reveal? What universal experience does it tap into?",
+  "opposing": "How could someone see this situation completely differently? What's the other side?",
+  "hidden_gold": "What unexpected angle, irony, or insight hasn't been explored yet? The twist nobody sees coming."
 }
 
-PANDUAN KUALITAS:
-- Setiap perspektif: 2-4 kalimat yang konkret dan spesifik, BUKAN generik.
-- hidden_gold harus menyebut detail spesifik dari cerita, bukan pernyataan umum.
-- Gunakan bahasa Indonesia yang hidup dan evocative.
-- Jika rag_context tersedia, integrasikan insight dari buku storytelling secara natural.
-- HANYA return JSON — tidak ada teks, komentar, atau markdown di luar JSON.
-"""
+Rules:
+- Each perspective MUST be distinct and add new value
+- Be specific to THIS story — no generic observations
+- "hidden_gold" should be genuinely surprising
+- Keep each field to 2-3 sentences max
+
+Output ONLY the JSON. No preamble, no explanation."""
 
 
-# ─── Helpers ──────────────────────────────────────────────────────────────────
-
-def _get_llm() -> ChatOpenAI:
-    """Instantiate the ChatOpenAI model for deep dive analysis."""
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        raise EnvironmentError("OPENAI_API_KEY environment variable is not set.")
-    return get_llm_for_agent("deep_dive")
-
-
-def _format_fragments(state: ArcwrightState) -> str:
-    """Serialize story_fragments into a readable block for the prompt.
-
-    Args:
-        state: Current ArcwrightState.
-
-    Returns:
-        A formatted string representation of all story fragments.
+def deep_dive_node(state: ArcwrightState, llm) -> dict:
     """
+    Deep Dive node — multi-perspective analysis of story material.
+
+    Reads:  story_fragments, rag_context
+    Writes: deep_dive_analysis (overwrite)
+    """
+    agent = create_react_agent(
+        model=llm,
+        tools=[],
+        state_modifier=_SYSTEM_PROMPT,
+    )
+
     fragments = state.get("story_fragments", [])
-    if not fragments:
-        return "(Tidak ada story fragment tersedia.)"
-
-    lines: list[str] = []
-    for i, frag in enumerate(fragments, start=1):
-        lines.append(f"Fragment {i}:")
-        lines.append(f"  Teks    : {frag.get('text', '')}")
-        if frag.get("emotion"):
-            lines.append(f"  Emosi   : {frag['emotion']}")
-        if frag.get("theme"):
-            lines.append(f"  Tema    : {frag['theme']}")
-    return "\n".join(lines)
-
-
-def _format_rag_context(state: ArcwrightState) -> str:
-    """Serialize rag_context into a concise reference block.
-
-    Args:
-        state: Current ArcwrightState.
-
-    Returns:
-        A formatted string of RAG results (top 3 only, to stay within context).
-    """
     rag = state.get("rag_context", [])
-    if not rag:
-        return "(Tidak ada RAG context tersedia.)"
 
-    lines: list[str] = []
-    for i, chunk in enumerate(rag[:3], start=1):  # cap at 3 to manage token budget
-        title = chunk.get("title", "Unknown")
-        text = chunk.get("text", "")[:400]  # trim long chunks
-        score = chunk.get("score", 0)
-        lines.append(f"[{i}] {title} (relevance: {score:.2f})\n{text}")
-    return "\n\n".join(lines)
+    fragments_text = "\n".join(f"- {f['text']}" for f in fragments)
+    rag_context = rag[0].get("response", "")[:400] if rag else ""
 
+    query = f"""Analyze these story fragments from 5 perspectives:
 
-def _parse_analysis(raw: str) -> dict[str, str]:
-    """Parse the JSON analysis from the LLM response.
+Story fragments:
+{fragments_text}
 
-    Args:
-        raw: Raw string content from the LLM.
+{f"Storytelling context: {rag_context}" if rag_context else ""}
 
-    Returns:
-        A dict with the 5 analysis perspectives, or empty strings on parse failure.
-    """
-    import json
+Produce the 5-perspective JSON analysis."""
 
-    # Strip markdown fences if present
-    text = raw.strip()
-    if text.startswith("```"):
-        parts = text.split("```")
-        text = parts[1] if len(parts) > 1 else text
-        if text.startswith("json"):
-            text = text[4:]
-        text = text.strip()
+    result = agent.invoke({"messages": [{"role": "user", "content": query}]})
 
-    try:
-        parsed = json.loads(text)
-        if isinstance(parsed, dict):
-            return {key: str(parsed.get(key, "")) for key in ANALYSIS_PERSPECTIVES}
-    except (json.JSONDecodeError, TypeError) as exc:
-        logger.warning("[DeepDive] JSON parse failed: %s — raw: %s…", exc, text[:200])
+    response_text = ""
+    for msg in reversed(result.get("messages", [])):
+        if hasattr(msg, "content") and msg.content and hasattr(msg, "type") and msg.type == "ai":
+            response_text = msg.content
+            break
 
-    # Fallback: return empty placeholders
-    return {key: "" for key in ANALYSIS_PERSPECTIVES}
+    analysis = _parse_analysis(response_text)
+    return {"deep_dive_analysis": analysis}
 
 
-# ─── Node function ─────────────────────────────────────────────────────────────
+def _parse_analysis(text: str) -> dict:
+    """Parse 5-perspective JSON from agent response."""
+    import re, json
 
-def deep_dive_node(state: ArcwrightState) -> dict[str, Any]:
-    """LangGraph node: multi-perspective storytelling analysis.
+    # Try to extract JSON block
+    json_match = re.search(r"\{[\s\S]+\}", text)
+    if json_match:
+        try:
+            data = json.loads(json_match.group())
+            required = {"surface", "psychological", "universal", "opposing", "hidden_gold"}
+            if required.issubset(data.keys()):
+                return data
+        except json.JSONDecodeError:
+            pass
 
-    Reads ``story_fragments`` and ``rag_context`` from *state* and produces a
-    structured analysis across five analytical lenses.
-
-    Args:
-        state: The shared ArcwrightState dict passed by LangGraph.
-
-    Returns:
-        A partial-state dict with keys:
-        - ``deep_dive_analysis``: dict with keys surface, psychological,
-          universal_theme, opposing_view, hidden_gold.
-        - ``agent_notes``: list containing one AgentNote from this agent.
-    """
-    logger.info("[DeepDive] Node triggered.")
-
-    fragments_text = _format_fragments(state)
-    rag_text = _format_rag_context(state)
-
-    empty_analysis = {key: "" for key in ANALYSIS_PERSPECTIVES}
-
-    try:
-        llm = _get_llm()
-
-        user_prompt = (
-            f"STORY FRAGMENTS:\n{fragments_text}\n\n"
-            f"RAG CONTEXT (kutipan buku storytelling):\n{rag_text}\n\n"
-            "Berikan analisis 5-perspektif dalam format JSON yang diminta."
-        )
-
-        response = llm.invoke(
-            [
-                SystemMessage(content=DEEP_DIVE_SYSTEM_PROMPT),
-                HumanMessage(content=user_prompt),
-            ]
-        )
-
-        analysis = _parse_analysis(response.content)
-
-        # ── Build summary note ────────────────────────────────────────────────
-        hidden_gold_preview = (analysis.get("hidden_gold") or "")[:120]
-        note_content = (
-            f"Deep dive complete on {len(state.get('story_fragments', []))} fragment(s). "
-            f"Hidden gold: '{hidden_gold_preview}…'"
-        )
-
-        logger.info("[DeepDive] Analysis complete.")
-
-        return {
-            "deep_dive_analysis": analysis,
-            "agent_notes": [
-                AgentNote(
-                    agent="deep_dive",
-                    note_type="insight",
-                    content=note_content,
-                )
-            ],
-        }
-
-    except EnvironmentError as exc:
-        logger.error("[DeepDive] Config error: %s", exc)
-        return {
-            "deep_dive_analysis": empty_analysis,
-            "agent_notes": [
-                AgentNote(
-                    agent="deep_dive",
-                    note_type="flag",
-                    content=f"Config error: {exc}",
-                )
-            ],
-        }
-    except Exception as exc:  # noqa: BLE001
-        logger.error("[DeepDive] Unexpected error: %s", exc, exc_info=True)
-        return {
-            "deep_dive_analysis": empty_analysis,
-            "agent_notes": [
-                AgentNote(
-                    agent="deep_dive",
-                    note_type="flag",
-                    content=f"Analysis failed: {type(exc).__name__}: {exc}",
-                )
-            ],
-        }
+    # Fallback: return raw as hidden_gold
+    return {
+        "surface": "",
+        "psychological": "",
+        "universal": "",
+        "opposing": "",
+        "hidden_gold": text[:500],
+        "_parse_error": True,
+    }

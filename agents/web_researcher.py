@@ -1,175 +1,99 @@
 """
-web_researcher.py — Web Researcher Agent for Arcwright Storytelling AI.
-
-Performs targeted DuckDuckGo searches to surface current storytelling trends,
-viral narrative patterns, and cultural context relevant to the user's story.
-Capped at 2 searches per invocation to keep latency low.
+Web Researcher Agent — searches real-time trends for audience intelligence.
+Uses Tavily. Gracefully skips if TAVILY_API_KEY is not set.
+Runs in parallel with Deep Dive via Send().
 """
+from langgraph.prebuilt import create_react_agent
 
-from __future__ import annotations
-
-import logging
-from typing import Any
-
-from langchain_community.tools import DuckDuckGoSearchRun
-
-from agents.state import AgentNote, ArcwrightState
-
-logger = logging.getLogger(__name__)
-
-# ─── Constants ────────────────────────────────────────────────────────────────
-
-MAX_SEARCHES = 2
-SEARCH_RESULT_MAX_CHARS = 600   # Trim per-result to keep state lean
+from config import settings
+from agents.state import ArcwrightState
 
 
-# ─── Helpers ──────────────────────────────────────────────────────────────────
+_SYSTEM_PROMPT = """You are the Web Research Agent — a trend scout and audience intelligence gatherer.
 
-def _build_search_queries(state: ArcwrightState) -> list[str]:
-    """Derive up to MAX_SEARCHES focused search queries from story fragments.
+Your job: find real-time information about what's resonating with audiences right now.
 
-    Strategy:
-    - Query 1: theme/emotion-based trend search (what's resonating on social media).
-    - Query 2: narrative technique search grounded in the story's core event.
+For the given story themes, research:
+1. Current trends on the target platform (YouTube/TikTok/Podcast/Blog)
+2. Related stories or topics that are resonating with audiences
+3. Audience demographics and what they care about
+4. Similar successful content angles in the past 3-6 months
 
-    Args:
-        state: Current ArcwrightState with story_fragments.
+Output format — always end with this JSON block:
+[WEB_RESEARCH]:
+{
+  "trends": ["trend 1", "trend 2"],
+  "audience_insights": "what this audience cares about",
+  "platform_tips": "specific format/length/style tips for the target platform",
+  "related_content": "examples of successful similar content"
+}"""
 
-    Returns:
-        A list of 1–2 query strings.
+
+def web_researcher_node(state: ArcwrightState, llm) -> dict:
     """
+    Web Researcher node — finds real-time trends for story angle.
+
+    Reads:  story_fragments, user_profile
+    Writes: web_research (overwrite)
+    """
+    if not settings.TAVILY_API_KEY:
+        # Gracefully skip if no API key
+        return {
+            "web_research": [{
+                "note": "Web research skipped — TAVILY_API_KEY not set",
+                "trends": [],
+                "audience_insights": "",
+                "platform_tips": "",
+            }]
+        }
+
+    from langchain_community.tools.tavily_search import TavilySearchResults
+    import os
+    os.environ["TAVILY_API_KEY"] = settings.TAVILY_API_KEY
+
+    tavily_tool = TavilySearchResults(max_results=5)
+    agent = create_react_agent(
+        model=llm,
+        tools=[tavily_tool],
+        state_modifier=_SYSTEM_PROMPT,
+    )
+
+    # Build search context from fragments
     fragments = state.get("story_fragments", [])
-    platform = state.get("platform_target", "general")
+    platform = state.get("user_profile", {}).get("platform_target", "general")
+    themes = " ".join(f["text"][:100] for f in fragments[:3])
 
-    # Collect themes and emotions
-    themes: list[str] = [f["theme"] for f in fragments if f.get("theme")]
-    emotions: list[str] = [f["emotion"] for f in fragments if f.get("emotion")]
-    texts: list[str] = [f["text"] for f in fragments if f.get("text")]
+    query = (
+        f"What storytelling trends are popular on {platform} in 2025 related to: {themes}. "
+        f"What makes content resonate with this audience?"
+    )
 
-    queries: list[str] = []
+    result = agent.invoke({"messages": [{"role": "user", "content": query}]})
 
-    # ── Query 1: trend / social resonance ────────────────────────────────────
-    if themes:
-        theme_str = themes[0]
-        emotion_str = emotions[0] if emotions else "relatable"
-        platform_hint = f" {platform}" if platform != "general" else ""
-        queries.append(
-            f'storytelling trend "{theme_str}" {emotion_str}{platform_hint} 2024 2025'
-        )
-    elif emotions:
-        queries.append(
-            f"viral storytelling {emotions[0]} personal story trend {platform} 2025"
-        )
-    else:
-        queries.append("viral personal storytelling techniques 2025 social media")
+    response_text = ""
+    for msg in reversed(result.get("messages", [])):
+        if hasattr(msg, "content") and msg.content and hasattr(msg, "type") and msg.type == "ai":
+            response_text = msg.content
+            break
 
-    # ── Query 2: narrative technique grounded in the story ────────────────────
-    if texts and len(queries) < MAX_SEARCHES:
-        # Extract a short excerpt (first 60 chars) as anchor
-        excerpt = texts[0][:60].strip()
-        queries.append(
-            f'storytelling technique narrative hook "{excerpt[:40]}" audience connection'
-        )
-    elif len(queries) < MAX_SEARCHES:
-        queries.append("how to make personal stories relatable storytelling craft")
-
-    return queries[:MAX_SEARCHES]
+    web_data = _parse_web_research(response_text)
+    return {"web_research": [web_data]}
 
 
-def _run_search(tool: DuckDuckGoSearchRun, query: str) -> str:
-    """Execute a single DuckDuckGo search with error handling.
-
-    Args:
-        tool: The DuckDuckGoSearchRun instance.
-        query: The search query string.
-
-    Returns:
-        Search result string, or an error message on failure.
-    """
-    try:
-        result = tool.run(query)
-        # Trim to keep state lean
-        if len(result) > SEARCH_RESULT_MAX_CHARS:
-            result = result[:SEARCH_RESULT_MAX_CHARS] + "… [trimmed]"
-        return result
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("[WebResearcher] Search failed for query '%s': %s", query, exc)
-        return f"[Search unavailable: {type(exc).__name__}]"
-
-
-# ─── Node function ─────────────────────────────────────────────────────────────
-
-def web_researcher_node(state: ArcwrightState) -> dict[str, Any]:
-    """LangGraph node: search the web for storytelling trends and context.
-
-    Builds up to 2 targeted queries from ``story_fragments`` and executes them
-    with DuckDuckGo (no API key required). Search failures are caught and
-    reported gracefully so the pipeline can continue.
-
-    Args:
-        state: The shared ArcwrightState dict passed by LangGraph.
-
-    Returns:
-        A partial-state dict with keys:
-        - ``web_research``: list of dicts with keys ``query`` and ``result``.
-        - ``agent_notes``: list containing one AgentNote from this agent.
-    """
-    logger.info("[WebResearcher] Node triggered.")
-
-    fragments = state.get("story_fragments", [])
-    if not fragments:
-        logger.warning("[WebResearcher] No story fragments available — skipping search.")
-        return {
-            "web_research": [],
-            "agent_notes": [
-                AgentNote(
-                    agent="web_researcher",
-                    note_type="flag",
-                    content="Skipped web search: no story fragments available in state.",
-                )
-            ],
-        }
-
-    try:
-        search_tool = DuckDuckGoSearchRun()
-        queries = _build_search_queries(state)
-
-        web_research: list[dict[str, str]] = []
-        for query in queries:
-            logger.info("[WebResearcher] Searching: %s", query)
-            result = _run_search(search_tool, query)
-            web_research.append({"query": query, "result": result})
-
-        successful = sum(
-            1 for r in web_research if not r["result"].startswith("[Search unavailable")
-        )
-        note_content = (
-            f"Ran {len(web_research)} search(es), {successful} successful. "
-            f"Queries: {'; '.join(q['query'][:60] for q in web_research)}"
-        )
-
-        logger.info("[WebResearcher] Completed — %d/%d searches ok.", successful, len(web_research))
-
-        return {
-            "web_research": web_research,
-            "agent_notes": [
-                AgentNote(
-                    agent="web_researcher",
-                    note_type="insight",
-                    content=note_content,
-                )
-            ],
-        }
-
-    except Exception as exc:  # noqa: BLE001
-        logger.error("[WebResearcher] Unexpected error: %s", exc, exc_info=True)
-        return {
-            "web_research": [],
-            "agent_notes": [
-                AgentNote(
-                    agent="web_researcher",
-                    note_type="flag",
-                    content=f"Web research failed: {type(exc).__name__}: {exc}",
-                )
-            ],
-        }
+def _parse_web_research(text: str) -> dict:
+    """Extract [WEB_RESEARCH] JSON from agent response."""
+    import re, json
+    pattern = r"\[WEB_RESEARCH\]:\s*(\{[\s\S]+?\})\s*$"
+    match = re.search(pattern, text)
+    if match:
+        try:
+            return json.loads(match.group(1))
+        except json.JSONDecodeError:
+            pass
+    # Fallback: return raw text
+    return {
+        "raw": text,
+        "trends": [],
+        "audience_insights": text[:500],
+        "platform_tips": "",
+    }

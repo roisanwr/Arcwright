@@ -17,10 +17,15 @@ book_dirs = sorted([d for d in OUTPUT_DIR.iterdir()
 all_chunks = []
 slugs = []
 for d in book_dirs:
-    chunks_file = d / "chunks.json"
+    chunks_file = d / "chunks_enhanced.json"
+    if not chunks_file.exists():
+        chunks_file = d / "chunks_refined.json"
+    if not chunks_file.exists():
+        chunks_file = d / "chunks.json"
+
     if chunks_file.exists():
         try:
-            with open(chunks_file) as f:
+            with open(chunks_file, encoding="utf-8") as f:
                 chunks = json.load(f)
             # Check it's a list of chunks (not a dict/collection dump)
             if isinstance(chunks, list) and len(chunks) > 0 and "text" in chunks[0]:

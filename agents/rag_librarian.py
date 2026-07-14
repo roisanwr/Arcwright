@@ -1,169 +1,119 @@
 """
-rag_librarian.py — RAG Librarian Agent for Arcwright Storytelling AI.
-
-Connects to the existing ChromaDB vector store and retrieves semantically
-relevant storytelling knowledge chunks based on the user's story fragments.
+RAG Librarian Agent — connects to Arcwright Forge ChromaDB.
+Read-only access to 9,270 chunks from 26 storytelling books.
+Uses BGE-M3 embeddings (must match forge/arcwright/embed.py).
 """
-
-from __future__ import annotations
-
-import logging
-from pathlib import Path
-from typing import Any
-
-import chromadb
-from langchain_chroma import Chroma
+import json
 from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_chroma import Chroma
+from langchain_core.tools.retriever import create_retriever_tool
+from langgraph.prebuilt import create_react_agent
 
-from agents.state import AgentNote, ArcwrightState
-
-logger = logging.getLogger(__name__)
-
-# ─── Constants ────────────────────────────────────────────────────────────────
-
-CHROMA_DB_PATH = "/home/rois/Arcwright/forge/output/chroma_db"
-COLLECTION_NAME = "storytelling_books"
-EMBEDDING_MODEL = "BAAI/bge-m3"
-TOP_K = 5
+from config import settings
+from agents.state import ArcwrightState
 
 
-# ─── Singleton embedding loader ───────────────────────────────────────────────
+_SYSTEM_PROMPT = """You are the RAG Librarian — keeper of storytelling wisdom.
 
-_embeddings: HuggingFaceEmbeddings | None = None
+Your ONLY job is to retrieve relevant storytelling knowledge from the library of 26 books.
+
+When given a context or query:
+1. Search the vector database for the most relevant techniques and frameworks
+2. Return the framework/technique with source attribution: "[Book Title] — [Section/Chapter]"
+3. Explain WHY it's relevant to the current story context
+4. Prioritise actionable techniques over abstract theory
+5. Do NOT suggest stories or converse with the user — only supply knowledge
+
+Available knowledge includes: Hero's Journey, Save the Cat beat sheet, Story Spine,
+Pixar storytelling rules, narrative psychology, audience resonance frameworks,
+questioning techniques for story mining, emotional arc design, scene construction.
+
+Always cite your source book and section."""
 
 
-def _get_embeddings() -> HuggingFaceEmbeddings:
-    """Return a cached HuggingFaceEmbeddings instance (loaded once per process)."""
-    global _embeddings
-    if _embeddings is None:
-        logger.info("Loading embedding model '%s' …", EMBEDDING_MODEL)
-        _embeddings = HuggingFaceEmbeddings(
-            model_name=EMBEDDING_MODEL,
-            model_kwargs={"device": "cpu"},
-            encode_kwargs={"normalize_embeddings": True},
+def _build_rag_tool():
+    """Build the ChromaDB retriever tool. Lazy-loaded on first agent call."""
+    embeddings = HuggingFaceEmbeddings(
+        model_name=settings.EMBEDDING_MODEL,
+        model_kwargs={"device": "cpu"},
+        encode_kwargs={"normalize_embeddings": True},
+    )
+    vector_store = Chroma(
+        client_settings=None,
+        persist_directory=str(settings.CHROMA_DIR),
+        embedding_function=embeddings,
+        collection_name=settings.CHROMA_COLLECTION,
+    )
+    retriever = vector_store.as_retriever(
+        search_type="mmr",
+        search_kwargs={"k": settings.RAG_K, "fetch_k": settings.RAG_FETCH_K},
+    )
+    return create_retriever_tool(
+        retriever,
+        name="search_storytelling_knowledge",
+        description=(
+            "Search the storytelling knowledge base (26 books, 9270 chunks). "
+            "Use this to find: questioning techniques for story mining, "
+            "narrative frameworks (Hero's Journey, Save the Cat, Story Spine), "
+            "audience psychology, emotional arc design, scene construction tips. "
+            "Input should be a specific question or topic you want to learn about."
+        ),
+    )
+
+
+# Module-level cache — loaded once per session
+_rag_tool = None
+_agent = None
+
+
+def _get_agent(llm):
+    global _rag_tool, _agent
+    if _agent is None:
+        _rag_tool = _build_rag_tool()
+        _agent = create_react_agent(
+            model=llm,
+            tools=[_rag_tool],
+            state_modifier=_SYSTEM_PROMPT,
         )
-    return _embeddings
+    return _agent
 
 
-# ─── Helper: build semantic query ─────────────────────────────────────────────
-
-def _build_query(state: ArcwrightState) -> str:
-    """Combine story fragments into a single semantic search query.
-
-    Args:
-        state: The current ArcwrightState holding story_fragments.
-
-    Returns:
-        A plain-text query string derived from all fragment text/themes.
+def rag_librarian_node(state: ArcwrightState, llm) -> dict:
     """
-    fragments = state.get("story_fragments", [])
-    if not fragments:
-        return "storytelling techniques emotional narrative"
+    RAG Librarian node — retrieves storytelling frameworks from ChromaDB.
 
-    parts: list[str] = []
-    for frag in fragments:
-        if frag.get("text"):
-            parts.append(frag["text"])
-        if frag.get("theme"):
-            parts.append(frag["theme"])
-        if frag.get("emotion"):
-            parts.append(frag["emotion"])
-
-    query = " ".join(parts)
-    # Trim to a reasonable length so embeddings stay focused
-    return query[:1000] if len(query) > 1000 else query
-
-
-# ─── Node function ─────────────────────────────────────────────────────────────
-
-def rag_librarian_node(state: ArcwrightState) -> dict[str, Any]:
-    """LangGraph node: retrieve storytelling knowledge relevant to user fragments.
-
-    Reads ``story_fragments`` from *state*, constructs a semantic query, and
-    performs a similarity search against the Arcwright ChromaDB collection.
-
-    Args:
-        state: The shared ArcwrightState dict passed by LangGraph.
-
-    Returns:
-        A partial-state dict with keys:
-        - ``rag_context``: list of dicts with keys text, title, source, score.
-        - ``agent_notes``: list containing one AgentNote from this agent.
+    Reads:  story_fragments, current_phase
+    Writes: rag_context (overwrite)
     """
-    logger.info("[RAGLibrarian] Node triggered.")
+    agent = _get_agent(llm)
 
-    # ── Validate ChromaDB path ────────────────────────────────────────────────
-    db_path = Path(CHROMA_DB_PATH)
-    if not db_path.exists():
-        logger.warning("[RAGLibrarian] ChromaDB path not found: %s", db_path)
-        return {
-            "rag_context": [],
-            "agent_notes": [
-                AgentNote(
-                    agent="rag_librarian",
-                    note_type="flag",
-                    content=f"ChromaDB path not found: {CHROMA_DB_PATH}",
-                )
-            ],
-        }
+    # Build query from current story fragments
+    fragments_text = "\n".join(
+        f"- {f['text']}" for f in state.get("story_fragments", [])
+    )
+    phase = state.get("current_phase", "mining")
 
-    try:
-        # ── Load embeddings + vector store ───────────────────────────────────
-        embeddings = _get_embeddings()
-        vectorstore = Chroma(
-            collection_name=COLLECTION_NAME,
-            embedding_function=embeddings,
-            persist_directory=CHROMA_DB_PATH,
+    if phase == "mining":
+        query = (
+            "What are the best open-ended interviewing and story mining questions "
+            "to help someone discover their personal story? "
+            f"Context: {fragments_text or 'user has not shared anything yet'}"
+        )
+    else:
+        query = (
+            "What storytelling frameworks and narrative structures are most relevant "
+            f"for a story with these themes: {fragments_text}"
         )
 
-        # ── Build query and search ────────────────────────────────────────────
-        query = _build_query(state)
-        logger.info("[RAGLibrarian] Query: %s …", query[:120])
+    result = agent.invoke({"messages": [{"role": "user", "content": query}]})
 
-        results = vectorstore.similarity_search_with_relevance_scores(
-            query=query,
-            k=TOP_K,
-        )
+    # Extract last AI message as RAG context
+    rag_text = ""
+    for msg in reversed(result.get("messages", [])):
+        if hasattr(msg, "content") and msg.content:
+            rag_text = msg.content
+            break
 
-        # ── Format results ────────────────────────────────────────────────────
-        rag_context: list[dict[str, Any]] = []
-        for doc, score in results:
-            rag_context.append(
-                {
-                    "text": doc.page_content,
-                    "title": doc.metadata.get("title", "Unknown"),
-                    "source": doc.metadata.get("source", doc.metadata.get("file", "Unknown")),
-                    "score": round(float(score), 4),
-                }
-            )
-
-        note_content = (
-            f"Retrieved {len(rag_context)} chunks from '{COLLECTION_NAME}'. "
-            f"Top score: {rag_context[0]['score'] if rag_context else 'N/A'}. "
-            f"Query preview: '{query[:80]}…'"
-        )
-        logger.info("[RAGLibrarian] Retrieved %d results.", len(rag_context))
-
-        return {
-            "rag_context": rag_context,
-            "agent_notes": [
-                AgentNote(
-                    agent="rag_librarian",
-                    note_type="insight",
-                    content=note_content,
-                )
-            ],
-        }
-
-    except Exception as exc:  # noqa: BLE001
-        logger.error("[RAGLibrarian] Error during retrieval: %s", exc, exc_info=True)
-        return {
-            "rag_context": [],
-            "agent_notes": [
-                AgentNote(
-                    agent="rag_librarian",
-                    note_type="flag",
-                    content=f"RAG retrieval failed: {type(exc).__name__}: {exc}",
-                )
-            ],
-        }
+    return {
+        "rag_context": [{"query": query, "response": rag_text, "source": "chromadb"}]
+    }

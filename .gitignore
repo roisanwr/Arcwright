@@ -17,6 +17,8 @@ forge/data/*.json
 
 # ChromaDB vector store (regenerate from chunks.json)
 forge/output/chroma_db/
+chroma_db_backup.tar.gz
+ChromaDB_Readme.md
 
 # Temp uploads
 forge/uploads/
@@ -36,3 +38,6 @@ Thumbs.db
 
 # Node
 node_modules/
+
+
+.env

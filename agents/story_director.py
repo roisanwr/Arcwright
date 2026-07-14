@@ -1,217 +1,203 @@
 """
-story_director.py — Supervisor Orchestrator for Arcwright
-
-Contains:
-  story_director_routing() — decides which node runs next based on state.
-  user_approval_node()     — pauses graph for human outline approval via interrupt().
+Story Director — supervisor that routes between all agents.
+Controls pipeline flow via current_phase state machine.
+Also contains user_approval_node for human-in-the-loop.
 """
+from typing import Literal
+from langgraph.types import interrupt, Command
 
-from __future__ import annotations
-
-import logging
-
-from langgraph.graph import END
-from langgraph.types import interrupt
-
-from agents.state import AgentNote, ArcwrightState
-
-logger = logging.getLogger(__name__)
+from config import settings
+from agents.state import ArcwrightState
 
 
-# ─── Routing ──────────────────────────────────────────────────────────────────
+# ── Story Director Routing ─────────────────────────────────────────────────────
 
-
-def story_director_routing(state: ArcwrightState) -> str:
+def story_director_node(state: ArcwrightState, llm=None) -> dict:
     """
-    Supervisor routing function for the Arcwright LangGraph.
+    Story Director node — evaluates state and updates current_phase.
+    Pure logic node: no LLM call, just phase transitions.
 
-    Reads the current state and returns the name of the next node to execute.
-    This function is used as a conditional edge source — it must return a string
-    that matches a registered node name (or END).
-
-    Args:
-        state: The current ArcwrightState shared across all agents.
-
-    Returns:
-        Name of the next node to execute, or END sentinel.
+    Reads:  current_phase, story_fragments, deep_dive_analysis, validation_result, etc.
+    Writes: current_phase
     """
-    current_phase: str = state.get("current_phase", "mining")
-    story_fragments: list = state.get("story_fragments", [])
-    rag_context: list = state.get("rag_context") or []
-    deep_dive_analysis: dict = state.get("deep_dive_analysis") or {}
-    web_research: list = state.get("web_research") or []
-    validation_result: dict | None = state.get("validation_result")
-    debate_rounds: int = state.get("debate_rounds", 0)
+    phase = state.get("current_phase", "mining")
+    fragments = state.get("story_fragments", [])
+    deep_dive = state.get("deep_dive_analysis", {})
+    validation = state.get("validation_result")
+    outline = state.get("story_outline")
+    debate_rounds = state.get("debate_rounds", 0)
 
-    logger.debug(
-        "Director routing: phase=%s fragments=%d rag=%s deep_dive=%s web=%s "
-        "validation=%s debate_rounds=%d",
-        current_phase,
-        len(story_fragments),
-        bool(rag_context),
-        bool(deep_dive_analysis),
-        bool(web_research),
-        validation_result is not None,
-        debate_rounds,
-    )
+    # Mining → Enriching transition
+    if phase == "mining" and len(fragments) >= settings.MIN_STORY_FRAGMENTS:
+        return {"current_phase": "enriching"}
+
+    # Enriching → Outlining transition (after BOTH parallel agents complete)
+    # Both deep_dive (dict with keys) and web_research (non-empty list) must be ready
+    if phase == "enriching" and deep_dive and web_research and not outline:
+        return {"current_phase": "outlining"}
+
+    # Outlining → Validating (after outline is created)
+    if phase == "outlining" and outline:
+        return {"current_phase": "validating"}
+
+    # Validating — check if debate rounds maxed
+    if phase == "validating" and validation:
+        if validation.get("passed"):
+            return {}  # Stay in validating, routing handles user_approval
+        if debate_rounds >= settings.MAX_DEBATE_ROUNDS:
+            # Story Director arbitrates — force proceed
+            return {"current_phase": "outlining", "debate_rounds": 0}
+
+    return {}
+
+
+def story_director_routing(state: ArcwrightState) -> str | list:
+    """
+    Routing function for Story Director conditional edges.
+    Returns next node name (or list of Send() for parallel execution).
+    """
+    from langgraph.types import Send
+
+    phase = state.get("current_phase", "mining")
+    fragments = state.get("story_fragments", [])
+    deep_dive = state.get("deep_dive_analysis", {})
+    web_research = state.get("web_research", [])
+    outline = state.get("story_outline")
+    validation = state.get("validation_result")
+    outline_approved = state.get("outline_approved", False)
+    debate_rounds = state.get("debate_rounds", 0)
 
     # ── Mining phase ──────────────────────────────────────────────────────────
-    if current_phase == "mining":
-        if len(story_fragments) < 2:
-            logger.info("Director → story_miner (need more fragments)")
-            return "story_miner"
-
-        if not rag_context:
-            logger.info("Director → rag_librarian (no RAG context yet)")
-            return "rag_librarian"
-
-        # Enough fragments + RAG context → move to enrichment
-        logger.info("Director → deep_dive (transitioning to enriching)")
-        return "deep_dive"
+    if phase == "mining":
+        if len(fragments) < settings.MIN_STORY_FRAGMENTS:
+            rag_context = state.get("rag_context", [])
+            if not rag_context:
+                return "rag_librarian"  # Get RAG context first for smart questions
+            return "story_miner"        # Then mine with RAG-guided questions
+        # Enough fragments — transition handled by story_director_node
 
     # ── Enriching phase ───────────────────────────────────────────────────────
-    if current_phase == "enriching":
-        if not deep_dive_analysis:
-            logger.info("Director → deep_dive (awaiting deep dive analysis)")
-            return "deep_dive"
-
+    if phase == "enriching":
+        missing = []
+        # Only dispatch agents that haven't completed yet (avoid re-running done work)
+        if not deep_dive:
+            missing.append(Send("deep_dive", state))
         if not web_research:
-            logger.info("Director → web_researcher (awaiting web research)")
-            return "web_researcher"
+            missing.append(Send("web_researcher", state))
+        if missing:
+            return missing  # Parallel Send() for whichever is still missing
+        # Both done — Director node will transition phase on next tick
+        return "story_director"
 
-        # All enrichment complete → build outline
-        logger.info("Director → outline_writer (all enrichment done)")
+    # ── Outlining phase ───────────────────────────────────────────────────────
+    if phase == "outlining":
         return "outline_writer"
 
     # ── Validating phase ──────────────────────────────────────────────────────
-    if current_phase == "validating":
-        if validation_result and validation_result.get("passed"):
-            logger.info("Director → user_approval (validation passed)")
-            return "user_approval"
-
-        if debate_rounds >= 3:
-            # Force through after 3 rounds regardless of score
-            logger.info("Director → user_approval (debate_rounds limit reached)")
-            return "user_approval"
-
-        logger.info("Director → story_miner (revise — validation failed, round %d)", debate_rounds)
-        return "story_miner"
-
-    # ── Outlining phase ───────────────────────────────────────────────────────
-    if current_phase == "outlining":
-        logger.info("Director → outline_writer")
-        return "outline_writer"
+    if phase == "validating":
+        if outline and not validation:
+            return "validator"
+        if validation:
+            if validation.get("passed"):
+                return "user_approval"
+            # Debate loop — debate_rounds tracking is in validator_node
+            if debate_rounds >= settings.MAX_DEBATE_ROUNDS:
+                # Director arbitrates: force proceed to user
+                return "user_approval"
+            return "story_miner"  # Loop back with validator critique
 
     # ── Scripting phase ───────────────────────────────────────────────────────
-    if current_phase == "scripting":
-        logger.info("Director → script_writer")
-        return "script_writer"
+    if phase == "scripting":
+        if outline_approved:
+            return "script_writer"
+        return "user_approval"
 
     # ── Complete ──────────────────────────────────────────────────────────────
-    if current_phase == "complete":
-        logger.info("Director → END")
+    if phase == "complete":
+        from langgraph.graph import END
         return END
 
-    # ── Default / unknown ─────────────────────────────────────────────────────
-    logger.warning("Director: unknown phase '%s' — falling back to story_miner", current_phase)
+    # Default fallback
     return "story_miner"
 
 
-# ─── User Approval Node ───────────────────────────────────────────────────────
+# ── Validator Debate Routing ───────────────────────────────────────────────────
 
+def validator_debate_routing(state: ArcwrightState) -> str:
+    """
+    Routing function after validator node.
+    Decides: outline_writer (revision), story_miner (debate), or story_director (pass/arbitrate).
+    """
+    validation = state.get("validation_result", {})
+    score = validation.get("score", 0) if validation else 0
+    rounds = state.get("debate_rounds", 0)
+
+    if score >= settings.VALIDATOR_PASS_THRESHOLD:
+        # PASS → back to Story Director → user_approval
+        return "story_director"
+
+    if rounds >= settings.MAX_DEBATE_ROUNDS:
+        # Max rounds reached → Story Director arbitrates
+        return "story_director"
+
+    if score >= 25:
+        # REVISE: loop to outline_writer with feedback
+        return "outline_writer"
+
+    # REJECT (<25): need new material from Story Miner
+    return "story_miner"
+
+
+# ── Human-in-the-Loop: User Approval Node ────────────────────────────────────
 
 def user_approval_node(state: ArcwrightState) -> dict:
     """
-    LangGraph node: pause execution and ask the user to approve the story outline.
+    User Approval node — interrupts pipeline and waits for user decision.
+    Uses LangGraph interrupt() for HITL pattern.
 
-    Uses LangGraph's interrupt() to yield control back to the caller. When the
-    graph is resumed (via graph.update_state() + graph.stream(None, ...)), this
-    node continues and marks the outline as approved.
-
-    Reads:
-        story_outline — displayed to the user for review.
-
-    Returns:
-        outline_approved=True, current_phase='scripting', agent_notes
+    The caller (CLI/API) resumes with Command(resume="approve"|"revise"|"reject")
     """
-    logger.info("User Approval node: pausing for human review.")
+    outline = state.get("story_outline", {})
 
-    story_outline: dict | None = state.get("story_outline")
-    notes: list[AgentNote] = []
+    # Format outline for user display
+    outline_display = {
+        "title": outline.get("title", ""),
+        "hook": outline.get("hook", ""),
+        "setup": outline.get("setup", ""),
+        "turning_point": outline.get("turning_point", ""),
+        "struggle": outline.get("struggle", ""),
+        "resolution": outline.get("resolution", ""),
+        "punchline": outline.get("punchline", ""),
+        "platform": outline.get("platform", ""),
+        "duration": outline.get("estimated_duration", ""),
+    }
 
-    # Build a human-readable outline summary to surface via the interrupt
-    if story_outline:
-        outline_display = (
-            f"📖 STORY OUTLINE FOR YOUR APPROVAL\n"
-            f"{'─' * 50}\n"
-            f"Title:            {story_outline.get('title', 'N/A')}\n"
-            f"Platform:         {story_outline.get('platform', 'N/A')}\n"
-            f"Est. Duration:    {story_outline.get('estimated_duration', 'N/A')}\n\n"
-            f"Hook:             {story_outline.get('hook', '')}\n\n"
-            f"Setup:            {story_outline.get('setup', '')}\n\n"
-            f"Turning Point:    {story_outline.get('turning_point', '')}\n\n"
-            f"Struggle:         {story_outline.get('struggle', '')}\n\n"
-            f"Resolution:       {story_outline.get('resolution', '')}\n\n"
-            f"Punchline:        {story_outline.get('punchline', '')}\n"
-            f"{'─' * 50}\n"
-            f"Do you approve this outline? (yes / no + feedback)"
-        )
-    else:
-        outline_display = (
-            "⚠️  No outline is available yet. "
-            "Type 'yes' to proceed anyway or 'no' to restart."
-        )
+    # Pause and surface outline to user
+    # interrupt() saves state — resumable via Command(resume=...)
+    decision = interrupt({
+        "type": "outline_approval",
+        "outline": outline_display,
+        "message": "Here's your story outline. What would you like to do?",
+        "options": ["approve", "revise", "reject"],
+    })
 
-    try:
-        # Pause the graph here — the host app must resume with the user's answer
-        user_response: str = interrupt(outline_display)
-
-        approved = str(user_response).strip().lower().startswith("y")
-
-        if approved:
-            logger.info("User approved the outline.")
-            notes.append(
-                AgentNote(
-                    agent="story_director",
-                    note_type="insight",
-                    content="User approved the story outline. Moving to scripting.",
-                )
-            )
-            return {
-                "outline_approved": True,
-                "current_phase": "scripting",
-                "agent_notes": notes,
-            }
-        else:
-            # User rejected — log their feedback and route back for revision
-            logger.info("User rejected the outline. Feedback: %s", user_response)
-            notes.append(
-                AgentNote(
-                    agent="story_director",
-                    note_type="question",
-                    content=f"User rejected outline. Feedback: {user_response}",
-                )
-            )
-            return {
-                "outline_approved": False,
-                "current_phase": "mining",
-                "agent_notes": notes,
-            }
-
-    except Exception as exc:  # noqa: BLE001
-        # If interrupt is not supported in the current runtime, auto-approve
-        logger.warning(
-            "interrupt() not available or raised unexpectedly (%s) — auto-approving.", exc
-        )
-        notes.append(
-            AgentNote(
-                agent="story_director",
-                note_type="flag",
-                content=f"User approval interrupt failed ({exc}). Auto-approved outline.",
-            )
-        )
+    # Process user decision
+    if decision == "approve":
         return {
             "outline_approved": True,
             "current_phase": "scripting",
-            "agent_notes": notes,
+        }
+    elif decision == "revise":
+        return {
+            "outline_approved": False,
+            "current_phase": "outlining",
+            "validation_result": None,   # Reset validation for fresh pass
+        }
+    else:  # reject
+        return {
+            "outline_approved": False,
+            "current_phase": "mining",
+            "story_outline": None,
+            "validation_result": None,
+            "debate_rounds": 0,
         }

@@ -1,227 +1,143 @@
 """
-outline_writer.py — Story Outline Builder Agent
-
-Synthesises story fragments, RAG context, deep-dive analysis, and web research
-into a structured StoryOutline ready for user approval.
-Runs as a LangGraph node.
+Outline Writer Agent — synthesizes all inputs into a structured story outline.
+Applies storytelling frameworks from RAG context.
 """
-
-from __future__ import annotations
-
+import re
 import json
-import logging
-import os
+from langgraph.prebuilt import create_react_agent
+
+from agents.state import ArcwrightState, StoryOutline
 
 
-from agents.state import AgentNote, ArcwrightState, StoryOutline
+_SYSTEM_PROMPT = """You are the Outline Writer — a story architect and structure builder.
 
-logger = logging.getLogger(__name__)
+Your job: synthesize story fragments, research, and frameworks into a compelling narrative outline.
 
-# ─── LLM ──────────────────────────────────────────────────────────────────────
+Use ALL available inputs:
+- Story fragments (the raw material)
+- RAG storytelling frameworks (apply the most relevant one)
+- Deep dive analysis (especially "hidden_gold" and "universal" perspectives)
+- Web research trends (ensure platform fit and audience relevance)
 
-def _get_llm():
-    """Lazy LLM init via factory — supports any provider."""
-    from config.settings import get_llm_for_agent
-    return get_llm_for_agent("outline_writer")
-
-# ─── Prompt ───────────────────────────────────────────────────────────────────
-
-_SYSTEM_PROMPT = """\
-You are an expert story architect who turns raw personal experiences into
-compelling, platform-native story outlines.
-
-Given story fragments, contextual knowledge, research, and a target platform,
-produce a tight narrative outline that follows this arc:
-  Hook → Setup → Turning Point → Struggle → Resolution → Punchline
-
-Platform guidelines:
-- youtube:  3–8 minutes, conversational but structured, strong hook in first 30s
-- tiktok:   30–90 seconds, ultra-punchy hook, single emotion, no preamble
-- podcast:  5–20 minutes, richer detail, dialogue-friendly, atmospheric
-- blog:     500–1500 words, reflective tone, SEO-aware title, insight-led ending
-- general:  balanced, medium length, universal tone
-
-Return ONLY valid JSON with exactly these keys:
+Output this EXACT JSON structure:
+[OUTLINE]:
 {
-  "title": "<compelling, platform-appropriate title>",
-  "hook": "<opening line or question that grabs attention immediately>",
-  "setup": "<context: who, when, where — just enough>",
-  "turning_point": "<the moment everything changed>",
-  "struggle": "<the tension, conflict, or journey>",
-  "resolution": "<how it resolved or what changed>",
-  "punchline": "<the relatable insight or takeaway>",
+  "title": "<compelling, specific headline — not generic>",
+  "hook": "<opening line that grabs attention in 1-2 sentences>",
+  "setup": "<introduce the world, character, and context in 2-3 sentences>",
+  "turning_point": "<the moment everything changes — be specific>",
+  "struggle": "<the internal/external conflict or obstacle — concrete details>",
+  "resolution": "<how it resolves — surprising or satisfying>",
+  "punchline": "<emotional or thematic payoff — the lasting impression>",
   "platform": "<youtube|tiktok|podcast|blog|general>",
-  "estimated_duration": "<e.g. '4 minutes' or '750 words'>"
+  "estimated_duration": "<2 min|5 min|10 min|15 min|long-form>"
 }
 
-No commentary outside the JSON. Be vivid, specific, and emotionally honest.
-"""
+Rules:
+- Title must be specific and evocative — NOT "My Story About..."
+- Hook must work as a standalone opening line
+- Each field must build on the previous one
+- Turning point must feel earned from the setup
+- Use the storytelling framework from RAG context"""
 
 
-def _build_user_prompt(
-    story_fragments: list[dict],
-    rag_context: list[dict],
-    deep_dive_analysis: dict,
-    web_research: list[dict],
-    platform: str,
-) -> str:
-    """Compose the outline-writer prompt from all available material."""
-    fragments_text = "\n".join(
-        f"- [{f.get('emotion', 'neutral')} / {f.get('theme', 'general')}] {f.get('text', '')}"
-        for f in story_fragments
+def outline_writer_node(state: ArcwrightState, llm) -> dict:
+    """
+    Outline Writer node — synthesizes all inputs into structured outline.
+
+    Reads:  story_fragments, rag_context, web_research, deep_dive_analysis
+    Writes: story_outline (overwrite), current_phase
+    """
+    agent = create_react_agent(
+        model=llm,
+        tools=[],
+        state_modifier=_SYSTEM_PROMPT,
     )
 
-    rag_text = "None available."
-    if rag_context:
-        rag_snippets = [
-            r.get("content", r.get("text", str(r)))[:300]
-            for r in rag_context[:5]
-        ]
-        rag_text = "\n".join(f"• {s}" for s in rag_snippets)
+    fragments = state.get("story_fragments", [])
+    rag = state.get("rag_context", [])
+    web = state.get("web_research", [])
+    deep_dive = state.get("deep_dive_analysis", {})
+    platform = state.get("user_profile", {}).get("platform_target", "general")
 
-    analysis_text = "None available."
-    if deep_dive_analysis:
-        themes = deep_dive_analysis.get("themes", [])
-        insights = deep_dive_analysis.get("insights", [])
-        analysis_text = (
-            f"Themes: {', '.join(themes)}\n"
-            f"Insights: {' | '.join(insights)}"
-        )
-
-    web_text = "None available."
-    if web_research:
-        web_snippets = [
-            r.get("summary", r.get("content", str(r)))[:300]
-            for r in web_research[:3]
-        ]
-        web_text = "\n".join(f"• {s}" for s in web_snippets)
-
-    return (
-        f"TARGET PLATFORM: {platform}\n\n"
-        f"=== STORY FRAGMENTS ===\n{fragments_text}\n\n"
-        f"=== RAG KNOWLEDGE BASE CONTEXT ===\n{rag_text}\n\n"
-        f"=== DEEP DIVE ANALYSIS ===\n{analysis_text}\n\n"
-        f"=== WEB RESEARCH ===\n{web_text}\n\n"
-        "Build the best possible story outline from this material."
+    # Check if this is a revision (validator critique exists)
+    critic_notes = [
+        n for n in state.get("agent_notes", [])
+        if n.get("agent_name") == "validator" and n.get("note_type") == "critique"
+    ]
+    revision_context = (
+        f"\n\nPREVIOUS VALIDATOR CRITIQUE (fix these issues):\n{critic_notes[-1]['content']}"
+        if critic_notes else ""
     )
 
+    query = f"""Create a story outline from these inputs:
 
-# ─── Node ─────────────────────────────────────────────────────────────────────
+STORY FRAGMENTS:
+{chr(10).join(f"- {f['text']} (emotion: {f.get('emotion', 'unknown')})" for f in fragments)}
 
+STORYTELLING FRAMEWORK (from RAG):
+{rag[0].get("response", "No framework available")[:600] if rag else "No RAG context"}
 
-def outline_writer_node(state: ArcwrightState) -> dict:
-    """
-    LangGraph node: build a structured StoryOutline from all gathered material.
+DEEP DIVE ANALYSIS:
+- Surface: {deep_dive.get("surface", "")}
+- Psychological: {deep_dive.get("psychological", "")}
+- Universal theme: {deep_dive.get("universal", "")}
+- Hidden gold: {deep_dive.get("hidden_gold", "")}
 
-    Reads:
-        story_fragments, rag_context, deep_dive_analysis, web_research,
-        platform_target
+AUDIENCE & PLATFORM:
+Target platform: {platform}
+Trends: {", ".join(str(t) for t in web[0].get("trends", [])[:3]) if web else "No trend data"}
+Platform tips: {web[0].get("platform_tips", "") if web else ""}
+{revision_context}
 
-    Returns:
-        story_outline (StoryOutline), current_phase='validating', agent_notes
-    """
-    logger.info("Outline Writer node starting.")
+Build the most compelling outline possible. Output the JSON."""
 
-    story_fragments: list[dict] = state.get("story_fragments", [])
-    rag_context: list[dict] = state.get("rag_context", []) or []
-    deep_dive_analysis: dict = state.get("deep_dive_analysis", {}) or {}
-    web_research: list[dict] = state.get("web_research", []) or []
-    platform: str = state.get("platform_target", "general")
+    result = agent.invoke({"messages": [{"role": "user", "content": query}]})
 
-    notes: list[AgentNote] = []
+    response_text = ""
+    for msg in reversed(result.get("messages", [])):
+        if hasattr(msg, "content") and msg.content and hasattr(msg, "type") and msg.type == "ai":
+            response_text = msg.content
+            break
 
-    try:
-        user_prompt = _build_user_prompt(
-            story_fragments, rag_context, deep_dive_analysis, web_research, platform
-        )
-
-        response = _get_llm().invoke(
-            [
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ]
-        )
-
-        raw = response.content.strip()
-
-        # Strip markdown code fences if present
-        if raw.startswith("```"):
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-            raw = raw.strip()
-
-        data: dict = json.loads(raw)
-
-        story_outline: StoryOutline = {
-            "title": data.get("title", "Untitled Story"),
-            "hook": data.get("hook", ""),
-            "setup": data.get("setup", ""),
-            "turning_point": data.get("turning_point", ""),
-            "struggle": data.get("struggle", ""),
-            "resolution": data.get("resolution", ""),
-            "punchline": data.get("punchline", ""),
-            "platform": data.get("platform", platform),
-            "estimated_duration": data.get("estimated_duration", "unknown"),
-        }
-
-        notes.append(
-            AgentNote(
-                agent="outline_writer",
-                note_type="insight",
-                content=(
-                    f"Outline created: '{story_outline['title']}' "
-                    f"for {story_outline['platform']} "
-                    f"({story_outline['estimated_duration']}). "
-                    f"Hook: {story_outline['hook'][:80]}…"
-                ),
-            )
-        )
-
-        logger.info("Outline created: %s", story_outline["title"])
-
-    except json.JSONDecodeError as exc:
-        logger.error("Failed to parse outline LLM response as JSON: %s", exc)
-        story_outline = _fallback_outline(platform, f"JSON parse error: {exc}")
-        notes.append(
-            AgentNote(
-                agent="outline_writer",
-                note_type="flag",
-                content=f"JSON parse error in outline_writer: {exc}",
-            )
-        )
-
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Outline Writer node error: %s", exc)
-        story_outline = _fallback_outline(platform, str(exc))
-        notes.append(
-            AgentNote(
-                agent="outline_writer",
-                note_type="flag",
-                content=f"Outline Writer exception: {exc}",
-            )
-        )
-
+    outline = _parse_outline(response_text, platform)
     return {
-        "story_outline": story_outline,
+        "story_outline": outline,
         "current_phase": "validating",
-        "agent_notes": notes,
     }
 
 
-# ─── Helpers ──────────────────────────────────────────────────────────────────
+def _parse_outline(text: str, platform: str) -> StoryOutline:
+    """Parse [OUTLINE] JSON from agent response."""
+    pattern = r"\[OUTLINE\]:\s*(\{[\s\S]+?\})\s*(?:\n|$)"
+    match = re.search(pattern, text)
 
+    if match:
+        try:
+            data = json.loads(match.group(1))
+            return StoryOutline(
+                title=data.get("title", "Untitled"),
+                hook=data.get("hook", ""),
+                setup=data.get("setup", ""),
+                turning_point=data.get("turning_point", ""),
+                struggle=data.get("struggle", ""),
+                resolution=data.get("resolution", ""),
+                punchline=data.get("punchline", ""),
+                platform=data.get("platform", platform),
+                estimated_duration=data.get("estimated_duration", "5 min"),
+            )
+        except (json.JSONDecodeError, KeyError):
+            pass
 
-def _fallback_outline(platform: str, reason: str) -> StoryOutline:
-    """Return a skeleton StoryOutline on error so the graph can continue."""
+    # Fallback outline from raw text
     return StoryOutline(
-        title="Story Outline (draft)",
-        hook="[Hook to be developed]",
-        setup="[Setup to be developed]",
-        turning_point="[Turning point to be developed]",
-        struggle="[Struggle to be developed]",
-        resolution="[Resolution to be developed]",
-        punchline="[Punchline to be developed]",
+        title="Story Outline",
+        hook=text[:200],
+        setup="",
+        turning_point="",
+        struggle="",
+        resolution="",
+        punchline="",
         platform=platform,
-        estimated_duration="unknown",
+        estimated_duration="5 min",
     )

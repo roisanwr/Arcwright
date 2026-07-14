@@ -1,105 +1,96 @@
 """
 ArcwrightState — shared state schema for all agents.
-Every agent reads from and writes to this TypedDict via LangGraph.
+All agent communication happens via this TypedDict (Blackboard pattern).
+No direct agent-to-agent calls.
 """
-
-from typing import TypedDict, Annotated, Literal, Optional
+import operator
+from typing import Annotated, Literal, Optional
+from typing_extensions import TypedDict
 from langgraph.graph.message import add_messages
 
 
-# ─── Sub-types ────────────────────────────────────────────────────
+# ── Sub-TypedDicts ────────────────────────────────────────────────────────────
+
+class UserProfile(TypedDict):
+    name: str
+    platform_target: Literal["youtube", "tiktok", "podcast", "blog", "general"]
+    session_count: int
+    preferred_language: str
+
 
 class StoryFragment(TypedDict):
-    """A piece of story material extracted from user."""
+    id: str
     text: str
     emotion: Optional[str]
-    theme: Optional[str]
+    timestamp: str
+
+
+class AgentNote(TypedDict):
+    agent_name: str
+    note_type: Literal["question", "insight", "flag", "suggestion", "critique"]
+    content: str
 
 
 class ValidationResult(TypedDict):
-    """Validator agent output."""
-    score: float                    # 0-50 total
-    relatability: float             # 0-10
-    emotional_hook: float           # 0-10
-    originality: float              # 0-10
-    platform_fit: float             # 0-10
-    trend_alignment: float          # 0-10
-    feedback: str                   # specific improvement notes
-    passed: bool                    # >= 35 = pass
+    score: float                        # 0–50
+    criteria_scores: dict[str, float]   # {"relatability": 8, ...}
+    feedback: str
+    passed: bool
 
 
 class StoryOutline(TypedDict):
-    """Outline Writer output."""
     title: str
-    hook: str           # Opening line that grabs attention
-    setup: str          # Context — who, when, where
-    turning_point: str  # The moment things changed
-    struggle: str       # The journey/conflict
-    resolution: str     # How it ended
-    punchline: str      # The takeaway / relatable insight
-    platform: str       # youtube | tiktok | podcast | blog
+    hook: str
+    setup: str
+    turning_point: str
+    struggle: str
+    resolution: str
+    punchline: str
+    platform: str
     estimated_duration: str
 
 
 class OutputScript(TypedDict):
-    """Script Writer final output."""
     title: str
-    body: str           # Full narrative script
-    platform: str
-    word_count: int
+    body: str
+    platform_variant: str
+    voice_notes: dict[str, str]
 
 
-class AgentNote(TypedDict):
-    """Inter-agent communication board entry."""
-    agent: str
-    note_type: Literal["insight", "flag", "question", "critique"]
-    content: str
-
-
-# ─── Main State ───────────────────────────────────────────────────
+# ── Main Session State ────────────────────────────────────────────────────────
 
 class ArcwrightState(TypedDict):
-    """
-    Shared state for all Arcwright agents.
-    LangGraph passes this between every node.
-    """
-
-    # ── Session ──────────────────────────────────────────────────
+    # ── Session metadata ──────────────────────────────────────────
     session_id: str
     current_phase: Literal[
-        "mining",       # Story Miner gathering fragments
-        "enriching",    # Deep Dive + Web Researcher running
-        "validating",   # Validator scoring outline
-        "outlining",    # Outline Writer building structure
-        "scripting",    # Script Writer producing final output
-        "complete",     # Done
+        "mining", "enriching", "validating", "outlining", "scripting", "complete"
     ]
 
-    # ── Conversation ─────────────────────────────────────────────
-    messages: Annotated[list, add_messages]     # Full chat history
-    platform_target: str                         # youtube|tiktok|podcast|blog|general
+    # ── User context ──────────────────────────────────────────────
+    user_profile: UserProfile
+    messages: Annotated[list, add_messages]   # Full chat history
 
-    # ── Story Discovery ──────────────────────────────────────────
-    story_fragments: Annotated[list[StoryFragment], lambda a, b: a + b]
-    interview_round: int                         # How many Q&A rounds done
+    # ── Story discovery (append-only) ─────────────────────────────
+    story_fragments: Annotated[list[StoryFragment], operator.add]
+    interview_questions_asked: Annotated[list[str], operator.add]
 
-    # ── Knowledge Enrichment ─────────────────────────────────────
-    rag_context: list[dict]                      # RAG Librarian results
-    web_research: list[dict]                     # Web Researcher results
-    deep_dive_analysis: dict                     # Deep Dive output
+    # ── Inter-agent communication board (append-only) ─────────────
+    agent_notes: Annotated[list[AgentNote], operator.add]
 
-    # ── Agent Notes Board ────────────────────────────────────────
-    agent_notes: Annotated[list[AgentNote], lambda a, b: a + b]
+    # ── Knowledge enrichment (overwrite each cycle) ───────────────
+    rag_context: list[dict]          # Latest RAG results
+    web_research: list[dict]         # Latest web research
+    deep_dive_analysis: dict         # Multi-perspective analysis
 
-    # ── Validation ───────────────────────────────────────────────
+    # ── Validation ────────────────────────────────────────────────
     validation_result: Optional[ValidationResult]
-    debate_rounds: int                           # Validator↔Miner debate count
+    debate_rounds: int
+    debate_log: Annotated[list[dict], operator.add]
 
-    # ── Output ───────────────────────────────────────────────────
+    # ── Output ────────────────────────────────────────────────────
     story_outline: Optional[StoryOutline]
-    outline_approved: bool                       # User approved outline?
     output_script: Optional[OutputScript]
 
-    # ── Controls ─────────────────────────────────────────────────
+    # ── Control flags ─────────────────────────────────────────────
+    outline_approved: bool
     error_count: int
-    next_agent: Optional[str]                    # Director sets this for routing

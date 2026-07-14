@@ -3,7 +3,7 @@
 import os, sys, time, json, subprocess
 from pathlib import Path
 
-OUTPUT_DIR = Path(os.path.expanduser("~/Arcwright/forge/output"))
+OUTPUT_DIR = Path(__file__).resolve().parent / "output"
 CHROMA_DIR = OUTPUT_DIR / "chroma_db"
 REPORT_FILE = OUTPUT_DIR / "batch_report.json"
 

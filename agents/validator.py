@@ -1,214 +1,150 @@
 """
-validator.py — Story Quality Validator Agent
-
-Scores a story outline across 5 criteria (0–10 each).
-Total >= 35 = PASS. Runs as a LangGraph node.
+Validator Agent — quality gate that scores outlines on 5 criteria.
+Engages in debate with Story Miner when score is below threshold.
 """
-
-from __future__ import annotations
-
+import re
 import json
-import logging
-import os
-from datetime import datetime
+from langgraph.prebuilt import create_react_agent
+
+from config import settings
+from agents.state import ArcwrightState, ValidationResult, AgentNote
 
 
-from agents.state import AgentNote, ArcwrightState, ValidationResult
+_SYSTEM_PROMPT = """You are the Story Validator — a quality gatekeeper for narratives.
 
-logger = logging.getLogger(__name__)
+You evaluate story outlines on 5 criteria, each scored 0-10 (total max: 50):
 
-# ─── LLM ──────────────────────────────────────────────────────────────────────
+1. RELATABILITY (0-10): Will many people connect with this story? Is the core experience universal?
+2. EMOTIONAL HOOK (0-10): Does it evoke genuine emotion? Is there a real emotional turning point?
+3. ORIGINALITY (0-10): Is the perspective fresh or generic? Does it offer a unique angle?
+4. PLATFORM FIT (0-10): Does it match the target platform format, length, and tone?
+5. TREND ALIGNMENT (0-10): Is it relevant to current audience interests?
 
-def _get_llm() -> ChatOpenAI:
-    """Lazy LLM init — avoids crash on import when API key not set."""
-    return ChatOpenAI(
-        model="gpt-4o-mini",
-        temperature=0.3,
-        api_key=os.environ.get("OPENAI_API_KEY"),
-    )
+Scoring thresholds:
+- ≥35/50: PASS — move forward to user approval
+- 25-34/50: REVISE — provide specific, actionable feedback
+- <25/50: REJECT — explain why it won't resonate
 
-# ─── Prompt ───────────────────────────────────────────────────────────────────
-
-_SYSTEM_PROMPT = """\
-You are a ruthlessly honest story quality validator for short-form storytelling content.
-Your job is to score a story concept on 5 criteria, each out of 10.
-
-Criteria:
-1. Relatability      — Will the target audience see themselves in this story?
-2. Emotional Hook    — Does it trigger a genuine emotional response quickly?
-3. Originality       — Is the angle fresh, or is this a tired cliché?
-4. Platform Fit      — Is the structure/tone right for the target platform?
-5. Trend Alignment   — Does it tap into current cultural conversations?
-
-Return ONLY a valid JSON object with these exact keys:
+ALWAYS output this exact JSON at the end:
+[VALIDATION_RESULT]:
 {
-  "relatability": <float 0-10>,
-  "emotional_hook": <float 0-10>,
-  "originality": <float 0-10>,
-  "platform_fit": <float 0-10>,
-  "trend_alignment": <float 0-10>,
-  "feedback": "<1–3 specific, actionable sentences for improvement>"
+  "score": <total 0-50>,
+  "criteria_scores": {
+    "relatability": <0-10>,
+    "emotional_hook": <0-10>,
+    "originality": <0-10>,
+    "platform_fit": <0-10>,
+    "trend_alignment": <0-10>
+  },
+  "verdict": "PASS" | "REVISE" | "REJECT",
+  "feedback": "<specific, actionable critique — what exactly needs to improve and why>"
 }
 
-Be precise. Decimals are fine (e.g. 7.5). Do not add commentary outside the JSON.
-"""
+When REVISE or REJECT: be constructive. Your goal is to IMPROVE the story, not kill it.
+Point to specific weaknesses with concrete suggestions."""
 
 
-def _build_user_prompt(
-    story_fragments: list[dict],
-    deep_dive_analysis: dict,
-    story_outline: dict | None,
-) -> str:
-    """Compose the user-facing validation prompt."""
-    fragments_text = "\n".join(
-        f"- [{f.get('emotion', 'neutral')}] {f.get('text', '')}"
-        for f in story_fragments
+def validator_node(state: ArcwrightState, llm) -> dict:
+    """
+    Validator node — scores outline and decides debate routing.
+
+    Reads:  story_outline, story_fragments, web_research, deep_dive_analysis
+    Writes: validation_result, debate_rounds, debate_log, agent_notes
+    """
+    agent = create_react_agent(
+        model=llm,
+        tools=[],
+        state_modifier=_SYSTEM_PROMPT,
     )
 
-    outline_text = "No outline yet — evaluating raw fragments."
-    if story_outline:
-        outline_text = (
-            f"Title: {story_outline.get('title', '')}\n"
-            f"Hook: {story_outline.get('hook', '')}\n"
-            f"Setup: {story_outline.get('setup', '')}\n"
-            f"Turning Point: {story_outline.get('turning_point', '')}\n"
-            f"Struggle: {story_outline.get('struggle', '')}\n"
-            f"Resolution: {story_outline.get('resolution', '')}\n"
-            f"Punchline: {story_outline.get('punchline', '')}\n"
-            f"Platform: {story_outline.get('platform', 'general')}\n"
-            f"Estimated Duration: {story_outline.get('estimated_duration', 'unknown')}"
-        )
+    outline = state.get("story_outline")
+    if not outline:
+        # Nothing to validate yet
+        return {}
 
-    themes = deep_dive_analysis.get("themes", []) if deep_dive_analysis else []
-    themes_text = ", ".join(themes) if themes else "none identified"
+    platform = state.get("user_profile", {}).get("platform_target", "general")
+    fragments = state.get("story_fragments", [])
+    web = state.get("web_research", [])
+    trends = web[0].get("trends", []) if web else []
 
-    return (
-        f"=== STORY FRAGMENTS ===\n{fragments_text}\n\n"
-        f"=== DEEP DIVE THEMES ===\n{themes_text}\n\n"
-        f"=== STORY OUTLINE ===\n{outline_text}\n\n"
-        "Please score this story concept."
-    )
+    query = f"""Please evaluate this story outline:
 
+OUTLINE:
+Title: {outline.get("title", "")}
+Hook: {outline.get("hook", "")}
+Setup: {outline.get("setup", "")}
+Turning Point: {outline.get("turning_point", "")}
+Struggle: {outline.get("struggle", "")}
+Resolution: {outline.get("resolution", "")}
+Punchline: {outline.get("punchline", "")}
+Platform: {outline.get("platform", platform)}
+Duration: {outline.get("estimated_duration", "")}
 
-# ─── Node ─────────────────────────────────────────────────────────────────────
+SOURCE MATERIAL:
+{chr(10).join(f"- {f['text']}" for f in fragments[:5])}
 
+CURRENT TRENDS ({platform}): {", ".join(str(t) for t in trends[:5]) if trends else "No trend data available"}
 
-def validator_node(state: ArcwrightState) -> dict:
-    """
-    LangGraph node: validate story quality and return a ValidationResult.
+Debate round: {state.get("debate_rounds", 0)}/3
 
-    Reads:
-        story_fragments, deep_dive_analysis, story_outline
+Score this outline on all 5 criteria and provide your verdict."""
 
-    Returns:
-        validation_result (ValidationResult), debate_rounds + 1, agent_notes
-    """
-    logger.info("Validator node starting.")
+    result = agent.invoke({"messages": [{"role": "user", "content": query}]})
 
-    story_fragments: list[dict] = state.get("story_fragments", [])
-    deep_dive_analysis: dict = state.get("deep_dive_analysis", {}) or {}
-    story_outline: dict | None = state.get("story_outline")
-    debate_rounds: int = state.get("debate_rounds", 0)
+    response_text = ""
+    for msg in reversed(result.get("messages", [])):
+        if hasattr(msg, "content") and msg.content and hasattr(msg, "type") and msg.type == "ai":
+            response_text = msg.content
+            break
 
-    notes: list[AgentNote] = []
+    validation = _parse_validation(response_text)
+    current_rounds = state.get("debate_rounds", 0)
 
-    try:
-        user_prompt = _build_user_prompt(story_fragments, deep_dive_analysis, story_outline)
-
-        response = _get_llm().invoke(
-            [
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ]
-        )
-
-        raw = response.content.strip()
-
-        # Strip markdown code fences if present
-        if raw.startswith("```"):
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-            raw = raw.strip()
-
-        scores: dict = json.loads(raw)
-
-        relatability: float = float(scores.get("relatability", 0))
-        emotional_hook: float = float(scores.get("emotional_hook", 0))
-        originality: float = float(scores.get("originality", 0))
-        platform_fit: float = float(scores.get("platform_fit", 0))
-        trend_alignment: float = float(scores.get("trend_alignment", 0))
-        feedback: str = scores.get("feedback", "No feedback provided.")
-
-        total: float = relatability + emotional_hook + originality + platform_fit + trend_alignment
-        passed: bool = total >= 35.0
-
-        validation_result: ValidationResult = {
-            "score": round(total, 2),
-            "relatability": relatability,
-            "emotional_hook": emotional_hook,
-            "originality": originality,
-            "platform_fit": platform_fit,
-            "trend_alignment": trend_alignment,
-            "feedback": feedback,
-            "passed": passed,
-        }
-
-        verdict = "PASSED ✅" if passed else "FAILED ❌"
-        notes.append(
-            AgentNote(
-                agent="validator",
-                note_type="insight",
-                content=(
-                    f"Validation round {debate_rounds + 1}: Score {total:.1f}/50 — {verdict}. "
-                    f"Feedback: {feedback}"
-                ),
-            )
-        )
-
-        logger.info("Validation complete. Score=%.1f passed=%s", total, passed)
-
-    except json.JSONDecodeError as exc:
-        logger.error("Failed to parse validator LLM response as JSON: %s", exc)
-        validation_result = _fallback_result(f"JSON parse error: {exc}")
-        notes.append(
-            AgentNote(
-                agent="validator",
-                note_type="flag",
-                content=f"JSON parse error in validator: {exc}",
-            )
-        )
-
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Validator node error: %s", exc)
-        validation_result = _fallback_result(str(exc))
-        notes.append(
-            AgentNote(
-                agent="validator",
-                note_type="flag",
-                content=f"Validator exception: {exc}",
-            )
-        )
-
-    return {
-        "validation_result": validation_result,
-        "debate_rounds": debate_rounds + 1,
-        "agent_notes": notes,
+    updates: dict = {
+        "validation_result": validation,
+        "debate_log": [{
+            "round": current_rounds,
+            "score": validation["score"],
+            "verdict": validation.get("verdict", ""),
+            "feedback": validation["feedback"],
+        }],
     }
 
+    if not validation["passed"]:
+        updates["debate_rounds"] = current_rounds + 1
+        updates["agent_notes"] = [AgentNote(
+            agent_name="validator",
+            note_type="critique",
+            content=f"Score: {validation['score']}/50 — {validation['feedback']}",
+        )]
 
-# ─── Helpers ──────────────────────────────────────────────────────────────────
+    return updates
 
 
-def _fallback_result(reason: str) -> ValidationResult:
-    """Return a zero-score ValidationResult on error so the graph can continue."""
+def _parse_validation(text: str) -> ValidationResult:
+    """Parse [VALIDATION_RESULT] JSON from agent response."""
+    pattern = r"\[VALIDATION_RESULT\]:\s*(\{[\s\S]+?\})\s*$"
+    match = re.search(pattern, text)
+
+    if match:
+        try:
+            data = json.loads(match.group(1))
+            score = float(data.get("score", 0))
+            return ValidationResult(
+                score=score,
+                criteria_scores=data.get("criteria_scores", {}),
+                feedback=data.get("feedback", ""),
+                passed=score >= settings.VALIDATOR_PASS_THRESHOLD,
+            )
+        except (json.JSONDecodeError, KeyError, ValueError):
+            pass
+
+    # Fallback: extract score from text
+    score_match = re.search(r"(\d+)\s*/\s*50", text)
+    score = float(score_match.group(1)) if score_match else 0.0
     return ValidationResult(
-        score=0.0,
-        relatability=0.0,
-        emotional_hook=0.0,
-        originality=0.0,
-        platform_fit=0.0,
-        trend_alignment=0.0,
-        feedback=f"Validation failed due to error: {reason}",
-        passed=False,
+        score=score,
+        criteria_scores={},
+        feedback=text[:500],
+        passed=score >= settings.VALIDATOR_PASS_THRESHOLD,
     )
