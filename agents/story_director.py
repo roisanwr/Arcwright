@@ -93,7 +93,7 @@ def story_director_routing(state: ArcwrightState) -> str | list:
     if phase == "outlining":
         return "outline_writer"
 
-    # ── Validating phase ──────────────────────────────────────────────────────
+    # Validating phase ──────────────────────────────────────────────────────
     if phase == "validating":
         if outline and not validation:
             return "validator"

@@ -44,6 +44,8 @@ def story_miner_node(state: ArcwrightState, llm) -> dict:
     Reads:  messages, story_fragments, agent_notes, rag_context
     Writes: story_fragments (append), messages (append), interview_questions_asked (append)
     """
+    from langgraph.types import interrupt
+    
     agent = create_react_agent(
         model=llm,
         tools=[],
@@ -66,8 +68,19 @@ def story_miner_node(state: ArcwrightState, llm) -> dict:
     new_fragments = _parse_fragments(response_text)
     clean_response = _strip_fragment_tags(response_text)
 
+    # Interrupt and wait for user input
+    user_response = interrupt({
+        "type": "interview_question",
+        "question": clean_response
+    })
+    
+    user_message = user_response.get("messages", [])[0] if isinstance(user_response, dict) and "messages" in user_response else {"role": "user", "content": str(user_response)}
+
     updates: dict = {
-        "messages": [{"role": "assistant", "content": clean_response}],
+        "messages": [
+            {"role": "assistant", "content": clean_response},
+            user_message
+        ],
     }
 
     if new_fragments:

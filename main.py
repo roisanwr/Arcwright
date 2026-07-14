@@ -95,9 +95,19 @@ def run_session(platform: str = "general", user_name: str = "User"):
     MAX_TURNS = 50  # Safety guard — prevent infinite loops
     turn = 0
     while turn < MAX_TURNS:
-        # Check if graph hit an interrupt (outline approval)
+        # Check if graph hit an interrupt (outline approval or story miner)
         interrupt_payload = _get_interrupt_payload(result)
-        if interrupt_payload and interrupt_payload.get("type") == "outline_approval":
+    
+        # Determine if we are paused at an interrupt node
+        is_interrupted = False
+        try:
+            state_config = graph.get_state(config)
+            if hasattr(state_config, "next") and state_config.next:
+                is_interrupted = True
+        except Exception:
+            pass
+        
+        if is_interrupted and interrupt_payload and interrupt_payload.get("type") == "outline_approval":
             _print_outline(interrupt_payload.get("outline", {}))
             print("\n  What would you like to do?")
             print("  [1] approve — generate the full script")
@@ -121,6 +131,28 @@ def run_session(platform: str = "general", user_name: str = "User"):
 
             result = graph.invoke(Command(resume=decision), config)
             continue
+            
+        elif is_interrupted and interrupt_payload and interrupt_payload.get("type") == "interview_question":
+            print(f"\n  🤖 Yui: {interrupt_payload.get('question', '')}\n")
+            try:
+                user_input = input("  You: ").strip()
+            except (KeyboardInterrupt, EOFError):
+                print("\n\n  Goodbye! Your session has been saved.")
+                sys.exit(0)
+
+            if user_input.lower() in ("quit", "exit", "q"):
+                print("\n  Goodbye! Your session has been saved.")
+                print(f"  Session ID: {session_id}")
+                break
+
+            if not user_input:
+                continue
+
+            turn += 1  # Increment turn counter
+
+            resume_data = {"messages": [{"role": "user", "content": user_input}]}
+            result = graph.invoke(Command(resume=resume_data), config)
+            continue
 
         # Check if pipeline is complete (script generated)
         output_script = result.get("output_script")
@@ -130,42 +162,10 @@ def run_session(platform: str = "general", user_name: str = "User"):
             print("  Session ID (to resume later):", session_id)
             break
 
-        # Extract latest AI message to show to user
-        messages = result.get("messages", [])
-        ai_messages = [
-            m for m in messages
-            if hasattr(m, "type") and m.type == "ai" and m.content
-        ]
-
-        if ai_messages:
-            last_ai = ai_messages[-1].content
-            print(f"\n  🤖 Yui: {last_ai}\n")
-        else:
-            # No message yet — prompt user to start
-            print("\n  🤖 Yui: Tell me about yourself. What kind of stories do you want to tell?\n")
-
-        # Get user input
-        try:
-            user_input = input("  You: ").strip()
-        except (KeyboardInterrupt, EOFError):
-            print("\n\n  Goodbye! Your session has been saved.")
-            sys.exit(0)
-
-        if user_input.lower() in ("quit", "exit", "q"):
-            print("\n  Goodbye! Your session has been saved.")
-            print(f"  Session ID: {session_id}")
-            break
-
-        if not user_input:
-            continue
-
-        turn += 1  # Increment turn counter
-
-        # Continue graph with user message
-        result = graph.invoke(
-            {"messages": [{"role": "user", "content": user_input}]},
-            config,
-        )
+        # If not interrupted and not complete, this is an internal state transition
+        # We just need to resume execution until the next interrupt
+        result = graph.invoke(None, config)
+        continue
 
     else:
         # MAX_TURNS reached — safety exit
