@@ -14,7 +14,6 @@ load_dotenv()
 
 # ── Project Paths ─────────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-CHROMA_DIR   = PROJECT_ROOT / "forge" / "output" / "chroma_db"
 SESSIONS_DB  = PROJECT_ROOT / "sessions.db"
 
 # ── Global API Keys ───────────────────────────────────────────────────────────
@@ -133,7 +132,8 @@ PROVIDER_BASE_URLS = {
 }
 
 # ── RAG ───────────────────────────────────────────────────────────────────────
-CHROMA_COLLECTION = "storytelling_books"
+QDRANT_URL        = os.getenv("QDRANT_URL", "http://localhost:6333")
+QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "storytelling_books")
 EMBEDDING_MODEL   = "BAAI/bge-m3"  # Must match forge/arcwright/config.py
 RAG_K             = 5
 RAG_FETCH_K       = 20
@@ -187,12 +187,11 @@ def validate_config(raise_on_error: bool = True) -> list[str]:
     elif DEFAULT_PROVIDER == "openrouter" and not OPENROUTER_API_KEY:
         errors.append("OPENROUTER_API_KEY tidak ditemukan di .env!")
 
-    # Cek ChromaDB path
-    if not CHROMA_DIR.exists():
-        warnings_list.append(
-            f"ChromaDB directory tidak ditemukan: {CHROMA_DIR}\n"
-            "  RAG Librarian akan gagal saat query. Jalankan forge pipeline dulu."
-        )
+    # Cek Qdrant connectivity (non-fatal — bisa running tapi belum di-embed)
+    warnings_list.append(
+        f"Pastikan Qdrant Docker sudah berjalan: docker compose up -d\n"
+        f"  lalu cek: curl {QDRANT_URL}/healthz"
+    )
 
     # Cek Tavily (non-fatal — web researcher akan skip gracefully)
     if not TAVILY_API_KEY:

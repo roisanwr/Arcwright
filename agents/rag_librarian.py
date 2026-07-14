@@ -1,11 +1,12 @@
 """
-RAG Librarian Agent — connects to Arcwright Forge ChromaDB.
+RAG Librarian Agent — connects to Arcwright Forge Qdrant vector store.
 Read-only access to 9,270 chunks from 26 storytelling books.
 Uses BGE-M3 embeddings (must match forge/arcwright/embed.py).
 """
 import json
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_chroma import Chroma
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_qdrant import QdrantVectorStore
+from qdrant_client import QdrantClient
 from langchain_core.tools.retriever import create_retriever_tool
 from langgraph.prebuilt import create_react_agent
 
@@ -32,17 +33,17 @@ Always cite your source book and section."""
 
 
 def _build_rag_tool():
-    """Build the ChromaDB retriever tool. Lazy-loaded on first agent call."""
+    """Build the Qdrant retriever tool. Lazy-loaded on first agent call."""
     embeddings = HuggingFaceEmbeddings(
         model_name=settings.EMBEDDING_MODEL,
-        model_kwargs={"device": "cpu"},
+        model_kwargs={"device": "cuda"},
         encode_kwargs={"normalize_embeddings": True},
     )
-    vector_store = Chroma(
-        client_settings=None,
-        persist_directory=str(settings.CHROMA_DIR),
-        embedding_function=embeddings,
-        collection_name=settings.CHROMA_COLLECTION,
+    qdrant_client = QdrantClient(url=settings.QDRANT_URL)
+    vector_store  = QdrantVectorStore(
+        client=qdrant_client,
+        collection_name=settings.QDRANT_COLLECTION,
+        embedding=embeddings,
     )
     retriever = vector_store.as_retriever(
         search_type="mmr",
@@ -73,7 +74,7 @@ def _get_agent(llm):
         _agent = create_react_agent(
             model=llm,
             tools=[_rag_tool],
-            state_modifier=_SYSTEM_PROMPT,
+            prompt=_SYSTEM_PROMPT,
         )
     return _agent
 
@@ -115,5 +116,5 @@ def rag_librarian_node(state: ArcwrightState, llm) -> dict:
             break
 
     return {
-        "rag_context": [{"query": query, "response": rag_text, "source": "chromadb"}]
+        "rag_context": [{"query": query, "response": rag_text, "source": "qdrant"}]
     }
