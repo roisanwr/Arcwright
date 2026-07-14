@@ -93,7 +93,6 @@ def story_miner_node(state: ArcwrightState, llm) -> dict:
 
     updates: dict = {
         "messages": [
-            {"role": "assistant", "content": clean_response},
             user_message,
         ],
     }
