@@ -47,7 +47,7 @@ def story_miner_node(state: ArcwrightState, llm) -> dict:
     agent = create_react_agent(
         model=llm,
         tools=[],
-        state_modifier=_system_prompt_with_context(state),
+        prompt=_system_prompt_with_context(state),
     )
 
     # Pass full conversation history

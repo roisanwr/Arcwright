@@ -51,7 +51,7 @@ def outline_writer_node(state: ArcwrightState, llm) -> dict:
     agent = create_react_agent(
         model=llm,
         tools=[],
-        state_modifier=_SYSTEM_PROMPT,
+        prompt=_SYSTEM_PROMPT,
     )
 
     fragments = state.get("story_fragments", [])
