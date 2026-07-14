@@ -62,10 +62,17 @@ def story_miner_node(state: ArcwrightState, llm) -> dict:
     last_message = None
     for msg in reversed(result.get("messages", [])):
         if hasattr(msg, "content") and msg.content and hasattr(msg, "type") and msg.type == "ai":
-            last_message = msg
-            break
+            # Cek apakah ID message ini sudah ada di state sebelumnya
+            existing_ids = {m.id for m in messages if hasattr(m, "id")}
+            if hasattr(msg, "id") and msg.id not in existing_ids:
+                last_message = msg
+                break
+            elif not hasattr(msg, "id") and msg not in messages:
+                last_message = msg
+                break
 
     if last_message is None:
+        # Fallback jika tidak ada pesan AI baru
         return {}
 
     response_text = last_message.content

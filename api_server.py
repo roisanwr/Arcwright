@@ -35,10 +35,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from langgraph.checkpoint.sqlite import SqliteSaver
+import sqlite3
+
 # ── Global state ──────────────────────────────────────────────────────────────
 
 validate_config(raise_on_error=True)
-graph = create_arcwright_graph()
+
+# Gunakan SQLite sebagai persistent checkpointer agar sesi tidak hilang saat direfresh
+conn = sqlite3.connect("arcwright_sessions.db", check_same_thread=False)
+checkpointer = SqliteSaver(conn)
+
+graph = create_arcwright_graph(checkpointer=checkpointer)
 
 # Per-session: queue SSE events
 session_queues: Dict[str, asyncio.Queue] = {}
@@ -113,22 +121,11 @@ def _run_graph_thread(session_id: str, message: str, is_new: bool = False):
         # ── Stream graph steps ────────────────────────────────────────────────
         for chunk in iterator:
             node_name = list(chunk.keys())[0]
-            node_data  = chunk[node_name]
-
+            
             _push(session_id, "status", {
                 "node":    node_name,
                 "message": _agent_label(node_name),
             })
-
-            # Kirim pesan AI yang muncul dari node ini
-            if isinstance(node_data, dict):
-                for msg in node_data.get("messages", []):
-                    # Pesan bisa berupa dict atau LangChain message object
-                    if isinstance(msg, dict):
-                        if msg.get("role") == "assistant" and msg.get("content"):
-                            _push(session_id, "chat", {"role": "assistant", "content": msg["content"]})
-                    elif hasattr(msg, "type") and msg.type == "ai" and msg.content:
-                        _push(session_id, "chat", {"role": "assistant", "content": msg.content})
 
         # ── Cek interrupt setelah loop selesai ────────────────────────────────
         state_info = graph.get_state(config)
@@ -151,19 +148,12 @@ def _run_graph_thread(session_id: str, message: str, is_new: bool = False):
                             _push(session_id, "chat", {"role": "assistant", "content": question})
                     elif itype == "outline_approval":
                         outline = payload.get("outline", {})
-                        lines = ["## 📋 Story Outline-mu\n"]
-                        labels = {
-                            "title": "Judul", "hook": "Hook", "setup": "Setup",
-                            "turning_point": "Turning Point", "struggle": "Struggle",
-                            "resolution": "Resolution", "punchline": "Punchline",
-                            "platform": "Platform", "duration": "Durasi",
-                        }
-                        for key, label in labels.items():
-                            val = outline.get(key, "")
-                            if val:
-                                lines.append(f"**{label}:** {val}")
-                        lines.append("\n---\nKetik **approve**, **revise**, atau **reject**.")
-                        _push(session_id, "chat", {"role": "assistant", "content": "\n".join(lines)})
+                        # Format outline nicely
+                        out_str = "## 📋 Story Outline-mu\n\n"
+                        for k, v in outline.items():
+                            out_str += f"- **{k.capitalize()}**: {v}\n"
+                        out_str += "\n---\nKetik **approve**, **revise**, atau **reject**."
+                        _push(session_id, "chat", {"role": "assistant", "content": out_str})
                         _push(session_id, "outline", outline)
             else:
                 # Interrupt tapi gak ada payload — cek apakah pipeline nunggu story_miner
@@ -192,7 +182,7 @@ def _run_graph_thread(session_id: str, message: str, is_new: bool = False):
         import traceback
         err = traceback.format_exc()
         print(f"[Arcwright] Graph error:\n{err}")
-        _push(session_id, "error", {"message": str(exc)})
+        _push(session_id, "error", {"message": f"Graph error: {str(exc)}"})
 
     finally:
         _push(session_id, "status", {"node": "idle", "message": "Menunggu inputmu..."})
