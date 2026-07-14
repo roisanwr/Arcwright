@@ -146,6 +146,8 @@ def _parse_fragments(text: str) -> list[StoryFragment]:
 
 
 def _strip_fragment_tags(text: str) -> str:
-    """Remove internal [FRAGMENT] tags from user-facing response."""
+    """Remove internal [FRAGMENT] tags and [FRAGMENTS_READY] from user-facing response."""
     import re
-    return re.sub(r"\[FRAGMENT\]:\s*\{[^}]+\}", "", text).strip()
+    cleaned = re.sub(r"\[FRAGMENT\]:\s*\{[^}]+\}", "", text)
+    cleaned = cleaned.replace("[FRAGMENTS_READY]", "")
+    return cleaned.strip()

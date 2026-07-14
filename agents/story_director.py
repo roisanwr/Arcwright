@@ -21,15 +21,25 @@ def story_director_node(state: ArcwrightState, llm=None) -> dict:
     Writes: current_phase
     """
     phase = state.get("current_phase", "mining")
+    messages = state.get("messages", [])
     fragments = state.get("story_fragments", [])
     deep_dive = state.get("deep_dive_analysis", {})
     validation = state.get("validation_result")
     outline = state.get("story_outline")
     debate_rounds = state.get("debate_rounds", 0)
 
-    # Mining → Enriching transition
-    if phase == "mining" and len(fragments) >= settings.MIN_STORY_FRAGMENTS:
-        return {"current_phase": "enriching"}
+    if phase == "mining":
+        # Extract fragments ready signal from last message if any
+        miner_ready = False
+        if messages:
+            last_msg = messages[-1]
+            if hasattr(last_msg, "content") and "[FRAGMENTS_READY]" in last_msg.content:
+                miner_ready = True
+            elif isinstance(last_msg, dict) and "[FRAGMENTS_READY]" in last_msg.get("content", ""):
+                miner_ready = True
+                
+        if len(fragments) >= settings.MIN_STORY_FRAGMENTS or miner_ready:
+            return {"current_phase": "enriching"}
 
     # Enriching → Outlining transition (after BOTH parallel agents complete)
     # Both deep_dive (dict with keys) and web_research (non-empty list) must be ready
@@ -60,6 +70,7 @@ def story_director_routing(state: ArcwrightState) -> str | list:
     from langgraph.types import Send
 
     phase = state.get("current_phase", "mining")
+    messages = state.get("messages", [])
     fragments = state.get("story_fragments", [])
     deep_dive = state.get("deep_dive_analysis", {})
     web_research = state.get("web_research", [])
@@ -70,7 +81,16 @@ def story_director_routing(state: ArcwrightState) -> str | list:
 
     # ── Mining phase ──────────────────────────────────────────────────────────
     if phase == "mining":
-        if len(fragments) < settings.MIN_STORY_FRAGMENTS:
+        # Extract fragments ready signal from last message if any
+        miner_ready = False
+        if messages:
+            last_msg = messages[-1]
+            if hasattr(last_msg, "content") and "[FRAGMENTS_READY]" in last_msg.content:
+                miner_ready = True
+            elif isinstance(last_msg, dict) and "[FRAGMENTS_READY]" in last_msg.get("content", ""):
+                miner_ready = True
+
+        if len(fragments) < settings.MIN_STORY_FRAGMENTS and not miner_ready:
             rag_context = state.get("rag_context", [])
             if not rag_context:
                 return "rag_librarian"  # Get RAG context first for smart questions
