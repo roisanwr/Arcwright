@@ -10,11 +10,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = PROJECT_ROOT / "forge" / "data"
 BOOKS_DIR = DATA_DIR / "books"
 OUTPUT_DIR = PROJECT_ROOT / "forge" / "output"
-CHROMA_DIR = OUTPUT_DIR / "chroma_db"
 
 # Ensure output dirs exist
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-CHROMA_DIR.mkdir(parents=True, exist_ok=True)
 
 # Temporary upload directory
 UPLOAD_DIR = PROJECT_ROOT / "forge" / "uploads"
@@ -22,7 +20,7 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 
 # ─── Models (all free, open source) ────────────────────────
 EMBEDDING_MODEL = "BAAI/bge-m3"
-RERANKER_MODEL = "BAAI/bge-reranker-v2-m3"
+RERANKER_MODEL  = "BAAI/bge-reranker-v2-m3"
 
 # ─── Chunking:  Strategy ──────────────────────────────────
 # Heading levels to treat as chunk boundaries (1=H1, 2=H2, 3=H3, 4=H4)
@@ -48,12 +46,13 @@ REFINER_BATCH_SIZE = 32          # Embedding batch size on GPU (lowered for 16GB
 USE_LLM = True              # Toggle when LLM API available
 LLM_API_URL = os.getenv("LLM_API_URL", "")
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
-LLM_MODEL = os.getenv("LLM_MODEL", "")
+LLM_MODEL   = os.getenv("LLM_MODEL", "")
 
 # ─── Contextual Enhancer (Layer 6) ────────────────────────
 # Requires USE_LLM=True
 ENHANCER_BATCH_SIZE = 10     # Chunks per LLM call
-ENHANCER_MAX_CHARS = 600     # Max chars from chunk sent to LLM for context
+ENHANCER_MAX_CHARS  = 600    # Max chars from chunk sent to LLM for context
 
-# ─── ChromaDB ─────────────────────────────────────────────
-CHROMA_COLLECTION_PREFIX = "arcwright_"
+# ─── Qdrant (replaces ChromaDB) ────────────────────────────
+QDRANT_URL        = os.getenv("QDRANT_URL", "http://localhost:6333")
+QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "storytelling_books")
