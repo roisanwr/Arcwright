@@ -104,7 +104,7 @@ def create_arcwright_graph(checkpointer=None):
 
     return builder.compile(
         checkpointer=checkpointer,
-        interrupt_before=["user_approval", "story_miner"],  # Pause before user approval AND before miner (to get user input)
+        interrupt_before=["user_approval"],  # Hanya interrupt sebelum outline approval
     )
 
 

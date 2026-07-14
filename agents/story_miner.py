@@ -40,21 +40,25 @@ After gathering fragments, extract them in this JSON format (internal, not shown
 def story_miner_node(state: ArcwrightState, llm) -> dict:
     """
     Story Miner node — conducts interactive Q&A to extract story fragments.
-
-    Reads:  messages, story_fragments, agent_notes, rag_context
-    Writes: story_fragments (append), messages (append), interview_questions_asked (append)
+    Flow:
+    1. Lihat apakah ada pesan user baru (setelah interrupt resume)
+    2. Kalau ya → proses pesan user, cari fragments, generate pertanyaan lanjutan, lalu interrupt lagi
+    3. Kalau tidak (first call) → generate pertanyaan pembuka, interrupt untuk tunggu user
     """
     from langgraph.types import interrupt
-    
+
+    messages = state.get("messages", [])
+
     agent = create_react_agent(
         model=llm,
         tools=[],
         prompt=_system_prompt_with_context(state),
     )
 
-    # Pass full conversation history
-    result = agent.invoke({"messages": state.get("messages", [])})
+    # Invoke agent dengan full conversation history
+    result = agent.invoke({"messages": messages})
 
+    # Ambil respons terakhir dari AI
     last_message = None
     for msg in reversed(result.get("messages", [])):
         if hasattr(msg, "content") and msg.content and hasattr(msg, "type") and msg.type == "ai":
@@ -68,18 +72,22 @@ def story_miner_node(state: ArcwrightState, llm) -> dict:
     new_fragments = _parse_fragments(response_text)
     clean_response = _strip_fragment_tags(response_text)
 
-    # Interrupt and wait for user input
+    # Interrupt: tampilkan pertanyaan ke user, tunggu jawaban
     user_response = interrupt({
-        "type": "interview_question",
-        "question": clean_response
+        "type":     "interview_question",
+        "question": clean_response,
     })
-    
-    user_message = user_response.get("messages", [])[0] if isinstance(user_response, dict) and "messages" in user_response else {"role": "user", "content": str(user_response)}
+
+    # Ekstrak pesan user dari resume payload
+    if isinstance(user_response, dict) and "messages" in user_response:
+        user_message = user_response["messages"][0]
+    else:
+        user_message = {"role": "user", "content": str(user_response)}
 
     updates: dict = {
         "messages": [
             {"role": "assistant", "content": clean_response},
-            user_message
+            user_message,
         ],
     }
 
@@ -91,7 +99,6 @@ def story_miner_node(state: ArcwrightState, llm) -> dict:
             content=f"Extracted {len(new_fragments)} new fragment(s)",
         )]
 
-    # Track question asked
     updates["interview_questions_asked"] = [clean_response[:200]]
 
     return updates

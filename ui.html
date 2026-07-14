@@ -1,214 +1,393 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="id">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Arcwright - Storytelling AI</title>
-    <!-- Tailwind CSS -->
+    <title>Arcwright — Storytelling AI</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <!-- Babel for JSX -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <!-- Markdown Parser -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-
     <style>
-        .markdown-body p { margin-bottom: 0.75em; }
-        .markdown-body ul { list-style-type: disc; margin-left: 1.5em; margin-bottom: 0.75em; }
-        .markdown-body strong { font-weight: bold; color: #fff; }
+        body { margin: 0; }
+        .markdown p { margin-bottom: 0.6em; }
+        .markdown ul { list-style: disc; margin-left: 1.4em; margin-bottom: 0.6em; }
+        .markdown ol { list-style: decimal; margin-left: 1.4em; margin-bottom: 0.6em; }
+        .markdown strong { font-weight: 700; }
+        .markdown h2 { font-size: 1.1em; font-weight: 700; margin: 0.6em 0 0.3em; }
+        .markdown h3 { font-size: 1em; font-weight: 600; margin: 0.4em 0 0.2em; }
+        .markdown code { background: #374151; padding: 1px 5px; border-radius: 4px; font-size: 0.85em; }
+        .markdown hr { border-color: #374151; margin: 0.8em 0; }
+
+        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+        .dot-blink { animation: blink 1.2s infinite; }
+        .dot-blink:nth-child(2) { animation-delay: 0.2s; }
+        .dot-blink:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes pulse-ring { 0%{transform:scale(0.9);opacity:1} 100%{transform:scale(1.4);opacity:0} }
+        .pulse-ring { animation: pulse-ring 1.5s ease-out infinite; }
     </style>
 </head>
-<body class="bg-gray-900 text-gray-100 font-sans h-screen flex overflow-hidden">
-    <div id="root" class="w-full h-full flex flex-col"></div>
+<body class="bg-gray-950 text-gray-100 h-screen overflow-hidden flex flex-col font-sans">
 
-    <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+<div id="root" class="flex-1 flex overflow-hidden"></div>
 
-        function App() {
-            const [sessionId, setSessionId] = useState(null);
-            const [messages, setMessages] = useState([]);
-            const [inputValue, setInputValue] = useState("");
-            const [status, setStatus] = useState("Initializing...");
-            const [isLoading, setIsLoading] = useState(true);
-            const [script, setScript] = useState(null);
-            
-            const messagesEndRef = useRef(null);
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
 
-            const scrollToBottom = () => {
-                messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-            };
+// ── Agent info ────────────────────────────────────────────────────────────────
+const AGENT_META = {
+    story_director:  { icon: "🧠", label: "Story Director",  color: "text-violet-400" },
+    story_miner:     { icon: "💬", label: "Story Miner",     color: "text-blue-400"   },
+    rag_librarian:   { icon: "📚", label: "RAG Librarian",   color: "text-green-400"  },
+    web_researcher:  { icon: "🌐", label: "Web Researcher",  color: "text-cyan-400"   },
+    deep_dive:       { icon: "🔍", label: "Deep Dive",       color: "text-yellow-400" },
+    validator:       { icon: "✅", label: "Validator",       color: "text-emerald-400"},
+    outline_writer:  { icon: "📝", label: "Outline Writer",  color: "text-orange-400" },
+    script_writer:   { icon: "🎬", label: "Script Writer",   color: "text-red-400"    },
+    user_approval:   { icon: "⏸️", label: "Menunggu review", color: "text-pink-400"   },
+    __interrupt__:   { icon: "⏸️", label: "Menunggu input",  color: "text-pink-400"   },
+    idle:            { icon: "💤", label: "Siap",            color: "text-gray-400"   },
+};
+const getAgent = (node) => AGENT_META[node] || { icon: "⚙️", label: node, color: "text-gray-400" };
 
-            useEffect(() => { scrollToBottom(); }, [messages, status]);
+// ── Loading dots ──────────────────────────────────────────────────────────────
+function LoadingDots() {
+    return (
+        <span className="inline-flex gap-0.5 ml-1">
+            {[0,1,2].map(i => (
+                <span key={i} className="dot-blink w-1 h-1 bg-gray-400 rounded-full inline-block" style={{animationDelay: `${i*0.2}s`}} />
+            ))}
+        </span>
+    );
+}
 
-            // Start Session
-            useEffect(() => {
-                fetch("/api/start")
-                    .then(res => res.json())
-                    .then(data => {
-                        setSessionId(data.session_id);
-                        connectSSE(data.session_id);
-                    })
-                    .catch(err => {
-                        console.error(err);
-                        setStatus("Error connecting to server.");
-                    });
-            }, []);
+// ── Status bar ────────────────────────────────────────────────────────────────
+function StatusBar({ node, message, isProcessing }) {
+    const agent = getAgent(node);
+    return (
+        <div className="flex items-center gap-2 text-xs px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-full">
+            {isProcessing && (
+                <span className="relative flex h-2 w-2">
+                    <span className="pulse-ring absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                </span>
+            )}
+            <span className={agent.color}>{agent.icon} {agent.label}</span>
+            {isProcessing && <LoadingDots />}
+        </div>
+    );
+}
 
-            const connectSSE = (sid) => {
-                const eventSource = new EventSource(`/api/stream?session_id=${sid}`);
-                
-                eventSource.addEventListener("chat", (e) => {
-                    const data = JSON.parse(e.data);
-                    setMessages(prev => [...prev, data]);
-                    setIsLoading(false);
-                });
+// ── Process timeline (sidebar) ────────────────────────────────────────────────
+function ProcessLog({ events }) {
+    const endRef = useRef(null);
+    useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [events]);
 
-                eventSource.addEventListener("status", (e) => {
-                    const data = JSON.parse(e.data);
-                    setStatus(data.message);
-                    if (data.node !== "idle") setIsLoading(true);
-                    else setIsLoading(false);
-                });
-
-                eventSource.addEventListener("script", (e) => {
-                    const data = JSON.parse(e.data);
-                    setScript(data);
-                });
-
-                eventSource.addEventListener("error", (e) => {
-                    const data = JSON.parse(e.data);
-                    setStatus("Error: " + data.message);
-                    setIsLoading(false);
-                });
-
-                eventSource.onerror = () => {
-                    setStatus("Connection lost. Reconnecting...");
-                };
-            };
-
-            const sendMessage = async (e) => {
-                e.preventDefault();
-                if (!inputValue.trim() || isLoading) return;
-
-                const msg = inputValue.trim();
-                setInputValue("");
-                setMessages(prev => [...prev, { role: "user", content: msg }]);
-                setIsLoading(true);
-
-                try {
-                    await fetch("/api/chat", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ session_id: sessionId, message: msg })
-                    });
-                } catch (error) {
-                    console.error("Error sending message:", error);
-                    setStatus("Failed to send message");
-                    setIsLoading(false);
-                }
-            };
-
-            return (
-                <div class="flex flex-1 h-full">
-                    {/* Main Chat Area */}
-                    <div class="flex-1 flex flex-col h-full border-r border-gray-800">
-                        {/* Header */}
-                        <div class="bg-gray-800 p-4 shadow flex items-center justify-between">
-                            <div class="flex items-center gap-3">
-                                <div class="w-8 h-8 rounded bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center font-bold text-white">
-                                    A
-                                </div>
-                                <h1 class="text-xl font-bold">Arcwright</h1>
-                            </div>
-                            <div class="text-xs text-gray-400 bg-gray-900 px-3 py-1 rounded-full border border-gray-700">
-                                {status}
-                            </div>
-                        </div>
-
-                        {/* Chat Messages */}
-                        <div class="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-950">
-                            {messages.length === 0 && (
-                                <div class="h-full flex items-center justify-center text-gray-500 text-sm">
-                                    Pipeline is warming up... (Ollama model loading)
-                                </div>
-                            )}
-                            
-                            {messages.map((msg, i) => (
-                                <div key={i} class={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                    <div class={`max-w-[80%] rounded-xl p-4 ${
-                                        msg.role === 'user' 
-                                            ? 'bg-blue-600 text-white rounded-br-none' 
-                                            : 'bg-gray-800 text-gray-200 border border-gray-700 rounded-bl-none'
-                                    }`}>
-                                        <div 
-                                            class="markdown-body text-sm leading-relaxed" 
-                                            dangerouslySetInnerHTML={{ __html: marked.parse(msg.content) }}
-                                        />
-                                    </div>
-                                </div>
-                            ))}
-                            <div ref={messagesEndRef} />
-                        </div>
-
-                        {/* Input Area */}
-                        <div class="p-4 bg-gray-900 border-t border-gray-800">
-                            <form onSubmit={sendMessage} class="flex gap-2 relative">
-                                <input
-                                    type="text"
-                                    value={inputValue}
-                                    onChange={(e) => setInputValue(e.target.value)}
-                                    placeholder="Type your answer here..."
-                                    disabled={isLoading}
-                                    class="flex-1 bg-gray-950 border border-gray-700 text-white rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-                                />
-                                <button 
-                                    type="submit" 
-                                    disabled={isLoading || !inputValue.trim()}
-                                    class="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-medium transition-colors"
-                                >
-                                    {isLoading ? 'Wait...' : 'Send'}
-                                </button>
-                            </form>
+    return (
+        <div className="flex-1 overflow-y-auto p-3 space-y-1.5 text-xs font-mono">
+            {events.length === 0 && (
+                <p className="text-gray-600 text-center mt-8">Pipeline belum berjalan.</p>
+            )}
+            {events.map((ev, i) => {
+                const agent = getAgent(ev.node);
+                return (
+                    <div key={i} className="flex items-start gap-2">
+                        <span className="shrink-0 mt-0.5">{agent.icon}</span>
+                        <div>
+                            <span className={`${agent.color} font-semibold`}>{agent.label}</span>
+                            <span className="text-gray-500 ml-2">{ev.ts}</span>
+                            {ev.message && <p className="text-gray-400">{ev.message}</p>}
                         </div>
                     </div>
+                );
+            })}
+            <div ref={endRef} />
+        </div>
+    );
+}
 
-                    {/* Sidebar / Script Output */}
-                    <div class="w-1/3 bg-gray-900 flex flex-col h-full hidden lg:flex">
-                        <div class="p-4 border-b border-gray-800 bg-gray-800">
-                            <h2 class="font-bold text-gray-200">Output Script</h2>
-                        </div>
-                        <div class="flex-1 p-4 overflow-y-auto">
-                            {script ? (
-                                <div class="bg-gray-950 border border-gray-800 rounded-lg p-5">
-                                    <h3 class="text-xl font-bold text-white mb-2">{script.title || "Your Story"}</h3>
-                                    <div class="flex gap-2 mb-4">
-                                        <span class="text-xs bg-purple-900/50 text-purple-300 px-2 py-1 rounded border border-purple-800">
-                                            {script.platform_variant}
-                                        </span>
-                                    </div>
-                                    <div 
-                                        class="markdown-body text-sm text-gray-300 space-y-4"
-                                        dangerouslySetInnerHTML={{ __html: marked.parse(script.body || "") }}
-                                    />
-                                </div>
-                            ) : (
-                                <div class="h-full flex flex-col items-center justify-center text-gray-600 text-sm text-center px-8">
-                                    <svg class="w-12 h-12 mb-4 opacity-20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                    </svg>
-                                    <p>Script will appear here once the pipeline finishes outlining and drafting.</p>
-                                </div>
-                            )}
-                        </div>
-                    </div>
+// ── Chat bubble ───────────────────────────────────────────────────────────────
+function ChatBubble({ msg }) {
+    const isUser = msg.role === "user";
+    return (
+        <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+            {!isUser && (
+                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-xs font-bold shrink-0 mt-1 mr-2">
+                    Y
                 </div>
-            );
-        }
+            )}
+            <div className={`max-w-[78%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                isUser
+                    ? "bg-blue-600 text-white rounded-br-none"
+                    : "bg-gray-800 border border-gray-700 text-gray-200 rounded-bl-none"
+            }`}>
+                <div
+                    className="markdown"
+                    dangerouslySetInnerHTML={{ __html: marked.parse(msg.content || "") }}
+                />
+            </div>
+        </div>
+    );
+}
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
+// ── Main App ──────────────────────────────────────────────────────────────────
+function App() {
+    const [sessionId,    setSessionId]    = useState(null);
+    const [messages,     setMessages]     = useState([]);
+    const [inputValue,   setInputValue]   = useState("");
+    const [currentNode,  setCurrentNode]  = useState("idle");
+    const [statusMsg,    setStatusMsg]    = useState("Memulai session...");
+    const [isProcessing, setIsProcessing] = useState(true);
+    const [processLog,   setProcessLog]   = useState([]);
+    const [script,       setScript]       = useState(null);
+    const [sidebarTab,   setSidebarTab]   = useState("log"); // "log" | "script"
+    const [error,        setError]        = useState(null);
+    const [connected,    setConnected]    = useState(false);
+
+    const messagesEndRef = useRef(null);
+
+    const scrollToBottom = useCallback(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, []);
+
+    useEffect(() => { scrollToBottom(); }, [messages]);
+
+    const addLogEvent = useCallback((node, message) => {
+        const now = new Date();
+        const ts = `${now.getHours().toString().padStart(2,"0")}:${now.getMinutes().toString().padStart(2,"0")}:${now.getSeconds().toString().padStart(2,"0")}`;
+        setProcessLog(prev => [...prev.slice(-100), { node, message, ts }]);
+    }, []);
+
+    // ── Inisialisasi session & SSE ────────────────────────────────────────────
+    useEffect(() => {
+        let evtSource = null;
+
+        fetch("/api/start")
+            .then(r => r.json())
+            .then(data => {
+                const sid = data.session_id;
+                setSessionId(sid);
+
+                evtSource = new EventSource(`/api/stream?session_id=${sid}`);
+                setConnected(true);
+
+                evtSource.addEventListener("chat", e => {
+                    const msg = JSON.parse(e.data);
+                    setMessages(prev => [...prev, msg]);
+                    setIsProcessing(false);
+                    setError(null);
+                });
+
+                evtSource.addEventListener("status", e => {
+                    const d = JSON.parse(e.data);
+                    setCurrentNode(d.node || "idle");
+                    setStatusMsg(d.message || "");
+                    const processing = d.node !== "idle";
+                    setIsProcessing(processing);
+                    addLogEvent(d.node, d.message);
+                });
+
+                evtSource.addEventListener("script", e => {
+                    const s = JSON.parse(e.data);
+                    setScript(s);
+                    setSidebarTab("script");
+                });
+
+                evtSource.addEventListener("outline", e => {
+                    setSidebarTab("log");
+                });
+
+                evtSource.addEventListener("error", e => {
+                    try {
+                        const d = JSON.parse(e.data);
+                        setError(d.message);
+                    } catch {}
+                    setIsProcessing(false);
+                });
+
+                evtSource.onerror = () => {
+                    setConnected(false);
+                    setStatusMsg("Koneksi terputus...");
+                    setIsProcessing(false);
+                };
+            })
+            .catch(() => {
+                setError("Gagal terhubung ke server. Pastikan api_server.py sudah berjalan.");
+                setIsProcessing(false);
+            });
+
+        return () => { if (evtSource) evtSource.close(); };
+    }, []);
+
+    // ── Kirim pesan ───────────────────────────────────────────────────────────
+    const sendMessage = async (e) => {
+        e.preventDefault();
+        const msg = inputValue.trim();
+        if (!msg || isProcessing || !sessionId) return;
+
+        setInputValue("");
+        setMessages(prev => [...prev, { role: "user", content: msg }]);
+        setIsProcessing(true);
+        setError(null);
+
+        try {
+            const res = await fetch("/api/chat", {
+                method:  "POST",
+                headers: { "Content-Type": "application/json" },
+                body:    JSON.stringify({ session_id: sessionId, message: msg }),
+            });
+            if (!res.ok) {
+                const err = await res.json();
+                setError(err.detail || "Gagal mengirim pesan.");
+                setIsProcessing(false);
+            }
+        } catch {
+            setError("Gagal menghubungi server.");
+            setIsProcessing(false);
+        }
+    };
+
+    // ── Render ────────────────────────────────────────────────────────────────
+    return (
+        <div className="flex flex-1 h-screen overflow-hidden">
+
+            {/* ── Left: Chat ─────────────────────────────────────────────── */}
+            <div className="flex flex-col flex-1 min-w-0 border-r border-gray-800">
+
+                {/* Header */}
+                <div className="flex items-center justify-between px-4 py-3 bg-gray-900 border-b border-gray-800 shrink-0">
+                    <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center font-bold text-sm">
+                            A
+                        </div>
+                        <div>
+                            <h1 className="font-bold text-base leading-none">Arcwright</h1>
+                            <p className="text-xs text-gray-500">Storytelling AI · Gemini via 9Router</p>
+                        </div>
+                    </div>
+                    <StatusBar node={currentNode} message={statusMsg} isProcessing={isProcessing} />
+                </div>
+
+                {/* Messages */}
+                <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+                    {messages.length === 0 && !isProcessing && (
+                        <div className="flex flex-col items-center justify-center h-full text-center text-gray-600 gap-3">
+                            <div className="text-4xl">🎭</div>
+                            <p className="text-sm">Yui siap menemanimu membuat cerita.<br/>Ketik sesuatu untuk memulai!</p>
+                        </div>
+                    )}
+                    {messages.length === 0 && isProcessing && (
+                        <div className="flex flex-col items-center justify-center h-full text-center text-gray-600 gap-3">
+                            <div className="text-4xl animate-bounce">🎭</div>
+                            <p className="text-sm">Memulai pipeline Arcwright<br/>Menunggu agen pertama...</p>
+                            <LoadingDots />
+                        </div>
+                    )}
+                    {messages.map((msg, i) => <ChatBubble key={i} msg={msg} />)}
+
+                    {/* Typing indicator */}
+                    {isProcessing && messages.length > 0 && (
+                        <div className="flex justify-start">
+                            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-xs font-bold shrink-0 mt-1 mr-2">Y</div>
+                            <div className="bg-gray-800 border border-gray-700 rounded-2xl rounded-bl-none px-4 py-3">
+                                <LoadingDots />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Error banner */}
+                    {error && (
+                        <div className="mx-auto max-w-lg text-center">
+                            <div className="bg-red-900/40 border border-red-700 rounded-xl px-4 py-3 text-sm text-red-300">
+                                ⚠️ {error}
+                            </div>
+                        </div>
+                    )}
+                    <div ref={messagesEndRef} />
+                </div>
+
+                {/* Input */}
+                <div className="shrink-0 px-4 py-3 bg-gray-900 border-t border-gray-800">
+                    <form onSubmit={sendMessage} className="flex gap-2">
+                        <input
+                            type="text"
+                            value={inputValue}
+                            onChange={e => setInputValue(e.target.value)}
+                            placeholder={isProcessing ? "Yui sedang berpikir..." : "Ketik pesanmu..."}
+                            disabled={isProcessing || !connected}
+                            className="flex-1 bg-gray-800 border border-gray-700 text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-40 placeholder-gray-600"
+                        />
+                        <button
+                            type="submit"
+                            disabled={isProcessing || !inputValue.trim() || !connected}
+                            className="bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors"
+                        >
+                            {isProcessing ? "⏳" : "Kirim"}
+                        </button>
+                    </form>
+                    {!connected && (
+                        <p className="text-xs text-red-400 mt-1 text-center">Koneksi ke server terputus.</p>
+                    )}
+                </div>
+            </div>
+
+            {/* ── Right: Sidebar ─────────────────────────────────────────── */}
+            <div className="w-80 flex flex-col bg-gray-900 shrink-0">
+                {/* Tabs */}
+                <div className="flex border-b border-gray-800 shrink-0">
+                    {[["log", "⚙️ Proses"], ["script", "📄 Skrip"]].map(([tab, label]) => (
+                        <button
+                            key={tab}
+                            onClick={() => setSidebarTab(tab)}
+                            className={`flex-1 py-2.5 text-xs font-medium transition-colors ${
+                                sidebarTab === tab
+                                    ? "text-blue-400 border-b-2 border-blue-500"
+                                    : "text-gray-500 hover:text-gray-300"
+                            }`}
+                        >
+                            {label}
+                            {tab === "script" && script && (
+                                <span className="ml-1 w-1.5 h-1.5 bg-green-400 rounded-full inline-block"></span>
+                            )}
+                        </button>
+                    ))}
+                </div>
+
+                {/* Process Log Tab */}
+                {sidebarTab === "log" && <ProcessLog events={processLog} />}
+
+                {/* Script Tab */}
+                {sidebarTab === "script" && (
+                    <div className="flex-1 overflow-y-auto p-4">
+                        {!script ? (
+                            <div className="flex flex-col items-center justify-center h-full text-center text-gray-600 gap-3 text-sm">
+                                <span className="text-3xl opacity-30">📄</span>
+                                <p>Skrip akan muncul di sini setelah pipeline selesai.</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                <h3 className="font-bold text-white text-base">{script.title || "Ceritamu"}</h3>
+                                {script.platform_variant && (
+                                    <span className="text-xs bg-purple-900/50 text-purple-300 px-2 py-1 rounded border border-purple-800">
+                                        {script.platform_variant}
+                                    </span>
+                                )}
+                                <div
+                                    className="markdown text-sm text-gray-300 leading-relaxed"
+                                    dangerouslySetInnerHTML={{ __html: marked.parse(script.body || "") }}
+                                />
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
 </body>
 </html>

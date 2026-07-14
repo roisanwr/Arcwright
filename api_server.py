@@ -1,3 +1,7 @@
+"""
+Arcwright Web API — FastAPI + SSE backend untuk Storytelling AI UI.
+Menghubungkan LangGraph pipeline ke browser via Server-Sent Events.
+"""
 import os
 import sys
 import uuid
@@ -5,7 +9,7 @@ import json
 import asyncio
 import threading
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Dict, Any
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse
@@ -13,12 +17,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
-# Add parent path for local imports
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from config.settings import validate_config
 from graph.pipeline import create_arcwright_graph, make_initial_state
 from langgraph.types import Command
+
+# ── App setup ─────────────────────────────────────────────────────────────────
 
 app = FastAPI(title="Arcwright UI API")
 
@@ -30,165 +35,243 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global graph instance
+# ── Global state ──────────────────────────────────────────────────────────────
+
 validate_config(raise_on_error=True)
 graph = create_arcwright_graph()
 
-# In-memory store for event queues per session
+# Per-session: queue SSE events
 session_queues: Dict[str, asyncio.Queue] = {}
+# Shared event loop (set on startup)
+_main_loop: asyncio.AbstractEventLoop | None = None
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _push(session_id: str, event_type: str, data: Any):
+    """Thread-safe: push SSE event dari background thread ke async event loop."""
+    if _main_loop is None:
+        return
+    q = session_queues.get(session_id)
+    if q is None:
+        return
+    payload = {"event": event_type, "data": json.dumps(data)}
+    _main_loop.call_soon_threadsafe(q.put_nowait, payload)
+
+
+def _agent_label(node_name: str) -> str:
+    labels = {
+        "story_director":  "🧠 Story Director memproses...",
+        "story_miner":     "💬 Story Miner bersiap bertanya...",
+        "rag_librarian":   "📚 RAG Librarian mencari framework...",
+        "web_researcher":  "🌐 Web Researcher mencari referensi...",
+        "deep_dive":       "🔍 Deep Dive menganalisis...",
+        "validator":       "✅ Validator menilai outline...",
+        "outline_writer":  "📝 Outline Writer menulis kerangka...",
+        "script_writer":   "🎬 Script Writer menulis skrip...",
+        "user_approval":   "⏸️  Menunggu persetujuanmu...",
+        "__interrupt__":   "⏸️  Menunggu input...",
+    }
+    return labels.get(node_name, f"⚙️ {node_name} berjalan...")
+
+
+# ── LangGraph thread ───────────────────────────────────────────────────────────
+
+def _run_graph_thread(session_id: str, message: str, is_new: bool = False):
+    """Jalankan LangGraph di background thread, push events via SSE."""
+    config = {"configurable": {"thread_id": session_id}}
+
+    try:
+        if is_new:
+            state = make_initial_state(
+                user_name="User", platform="general", session_id=session_id
+            )
+            iterator = graph.stream(state, config, stream_mode="updates")
+        else:
+            state_info = graph.get_state(config)
+            is_interrupted = bool(getattr(state_info, "next", None))
+
+            if is_interrupted:
+                # Cek apakah message adalah outline approval decision
+                if message.strip().lower() in ("approve", "revise", "reject", "1", "2", "3"):
+                    decision_map = {
+                        "approve": "approve", "1": "approve",
+                        "revise":  "revise",  "2": "revise",
+                        "reject":  "reject",  "3": "reject",
+                    }
+                    decision = decision_map.get(message.strip().lower(), "reject")
+                    iterator = graph.stream(Command(resume=decision), config, stream_mode="updates")
+                else:
+                    resume_data = {"messages": [{"role": "user", "content": message}]}
+                    iterator = graph.stream(Command(resume=resume_data), config, stream_mode="updates")
+            else:
+                iterator = graph.stream(
+                    {"messages": [{"role": "user", "content": message}]},
+                    config,
+                    stream_mode="updates",
+                )
+
+        # ── Stream graph steps ────────────────────────────────────────────────
+        for chunk in iterator:
+            node_name = list(chunk.keys())[0]
+            node_data  = chunk[node_name]
+
+            _push(session_id, "status", {
+                "node":    node_name,
+                "message": _agent_label(node_name),
+            })
+
+            # Kirim pesan AI yang muncul dari node ini
+            if isinstance(node_data, dict):
+                for msg in node_data.get("messages", []):
+                    # Pesan bisa berupa dict atau LangChain message object
+                    if isinstance(msg, dict):
+                        if msg.get("role") == "assistant" and msg.get("content"):
+                            _push(session_id, "chat", {"role": "assistant", "content": msg["content"]})
+                    elif hasattr(msg, "type") and msg.type == "ai" and msg.content:
+                        _push(session_id, "chat", {"role": "assistant", "content": msg.content})
+
+        # ── Cek interrupt setelah loop selesai ────────────────────────────────
+        state_info = graph.get_state(config)
+        if getattr(state_info, "next", None):
+            # Cari semua interrupts dari semua tasks
+            all_interrupts = []
+            for task in (getattr(state_info, "tasks", None) or []):
+                raw = getattr(task, "interrupts", None) or []
+                all_interrupts.extend(raw)
+
+            if all_interrupts:
+                for interrupt in all_interrupts:
+                    payload = getattr(interrupt, "value", interrupt)
+                    if not isinstance(payload, dict):
+                        continue
+                    itype = payload.get("type", "")
+                    if itype == "interview_question":
+                        question = payload.get("question", "")
+                        if question:
+                            _push(session_id, "chat", {"role": "assistant", "content": question})
+                    elif itype == "outline_approval":
+                        outline = payload.get("outline", {})
+                        lines = ["## 📋 Story Outline-mu\n"]
+                        labels = {
+                            "title": "Judul", "hook": "Hook", "setup": "Setup",
+                            "turning_point": "Turning Point", "struggle": "Struggle",
+                            "resolution": "Resolution", "punchline": "Punchline",
+                            "platform": "Platform", "duration": "Durasi",
+                        }
+                        for key, label in labels.items():
+                            val = outline.get(key, "")
+                            if val:
+                                lines.append(f"**{label}:** {val}")
+                        lines.append("\n---\nKetik **approve**, **revise**, atau **reject**.")
+                        _push(session_id, "chat", {"role": "assistant", "content": "\n".join(lines)})
+                        _push(session_id, "outline", outline)
+            else:
+                # Interrupt tapi gak ada payload — cek apakah pipeline nunggu story_miner
+                next_nodes = getattr(state_info, "next", ())
+                if "story_miner" in next_nodes:
+                    # Pipeline nunggu input user tapi interrupt belum tersimpan — 
+                    # tampilkan pesan dari messages terakhir
+                    state_vals = getattr(state_info, "values", {}) or {}
+                    msgs = state_vals.get("messages", [])
+                    for msg in reversed(msgs):
+                        if hasattr(msg, "type") and msg.type == "ai" and msg.content:
+                            _push(session_id, "chat", {"role": "assistant", "content": msg.content})
+                            break
+
+        # ── Cek script final ──────────────────────────────────────────────────
+        final_values = getattr(graph.get_state(config), "values", {}) or {}
+        output_script = final_values.get("output_script")
+        if output_script:
+            _push(session_id, "script", output_script)
+            _push(session_id, "chat", {
+                "role":    "assistant",
+                "content": "✅ Skripmu sudah jadi! Lihat di panel kanan.",
+            })
+
+    except Exception as exc:
+        import traceback
+        err = traceback.format_exc()
+        print(f"[Arcwright] Graph error:\n{err}")
+        _push(session_id, "error", {"message": str(exc)})
+
+    finally:
+        _push(session_id, "status", {"node": "idle", "message": "Menunggu inputmu..."})
+
+
+# ── Startup: simpan event loop ────────────────────────────────────────────────
+
+@app.on_event("startup")
+async def _on_startup():
+    global _main_loop
+    _main_loop = asyncio.get_running_loop()
+
+
+# ── Routes ────────────────────────────────────────────────────────────────────
+
+@app.get("/")
+def serve_ui():
+    html_path = Path(__file__).parent / "ui.html"
+    if html_path.exists():
+        return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
+    return HTMLResponse("<h1>ui.html not found</h1>")
+
+
+@app.get("/api/start")
+def start_session():
+    """Mulai sesi baru Arcwright."""
+    session_id = str(uuid.uuid4())
+    # Buat queue SEBELUM thread jalan, biar event gak ilang
+    session_queues[session_id] = asyncio.Queue()
+    threading.Thread(
+        target=_run_graph_thread,
+        args=(session_id, "", True),
+        daemon=True,
+    ).start()
+    return {"session_id": session_id}
+
 
 class ChatRequest(BaseModel):
     session_id: str
     message: str
 
-def get_or_create_queue(session_id: str) -> asyncio.Queue:
-    if session_id not in session_queues:
-        session_queues[session_id] = asyncio.Queue()
-    return session_queues[session_id]
-
-async def push_event(session_id: str, event_type: str, data: Any):
-    q = get_or_create_queue(session_id)
-    await q.put({"event": event_type, "data": json.dumps(data)})
-
-def _run_graph_thread(session_id: str, message: str, is_new: bool = False):
-    """Run LangGraph synchronously in a background thread and push events to SSE queue."""
-    config = {"configurable": {"thread_id": session_id}}
-    
-    async def push(ev_type, payload):
-        # Fire-and-forget push from sync context to async event loop
-        try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(push_event(session_id, ev_type, payload))
-        except RuntimeError:
-            pass
-
-    if is_new:
-        # Create initial state
-        state = make_initial_state(user_name="User", platform="general", session_id=session_id)
-        iterator = graph.stream(state, config, stream_mode="updates")
-    else:
-        # Check if we are resuming from an interrupt
-        state_info = graph.get_state(config)
-        is_interrupted = hasattr(state_info, "next") and state_info.next
-        
-        if is_interrupted:
-            # We are answering a question or outline approval
-            resume_data = {"messages": [{"role": "user", "content": message}]}
-            # Note: For outline approval, message might be "approve"/"revise"/"reject"
-            if message.lower() in ("approve", "revise", "reject", "1", "2", "3"):
-                decision = "approve" if message.lower() in ("approve", "1") else ("revise" if message.lower() in ("revise", "2") else "reject")
-                iterator = graph.stream(Command(resume=decision), config, stream_mode="updates")
-            else:
-                iterator = graph.stream(Command(resume=resume_data), config, stream_mode="updates")
-        else:
-            # Normal invocation (shouldn't really happen since we use interrupt_before)
-            iterator = graph.stream({"messages": [{"role": "user", "content": message}]}, config, stream_mode="updates")
-
-    # Start stepping through the graph
-    try:
-        for chunk in iterator:
-            node_name = list(chunk.keys())[0]
-            node_data = chunk[node_name]
-            
-            # Send status update
-            asyncio.run(push_event(session_id, "status", {"node": node_name, "message": f"Agent running: {node_name}"}))
-            
-            # If the node produced a new AI message, send it to the UI
-            if "messages" in node_data:
-                for msg in node_data["messages"]:
-                    if hasattr(msg, "type") and msg.type == "ai" and msg.content:
-                        asyncio.run(push_event(session_id, "chat", {"role": "assistant", "content": msg.content}))
-
-        # If we exited the loop, check if we hit an interrupt
-        state_info = graph.get_state(config)
-        if hasattr(state_info, "next") and state_info.next:
-            interrupts = []
-            if hasattr(state_info, "tasks") and state_info.tasks:
-                if hasattr(state_info.tasks[0], "interrupts") and state_info.tasks[0].interrupts is not None:
-                    interrupts = state_info.tasks[0].interrupts
-            
-            if interrupts:
-                payload = interrupts[0].value if hasattr(interrupts[0], "value") else interrupts[0]
-                
-                if payload.get("type") == "interview_question":
-                    # Send the question
-                    asyncio.run(push_event(session_id, "chat", {"role": "assistant", "content": payload.get("question", "")}))
-                elif payload.get("type") == "outline_approval":
-                    outline = payload.get("outline", {})
-                    # Format outline nicely
-                    out_str = "📋 YOUR STORY OUTLINE\n"
-                    for k, v in outline.items():
-                        out_str += f"- **{k.capitalize()}**: {v}\n"
-                    out_str += "\nWhat would you like to do? Type: **approve**, **revise**, or **reject**."
-                    asyncio.run(push_event(session_id, "chat", {"role": "assistant", "content": out_str}))
-                    asyncio.run(push_event(session_id, "outline", outline))
-
-        # Check if pipeline is fully complete
-        try:
-            final_state = graph.get_state(config).values
-            if final_state and final_state.get("output_script"):
-                asyncio.run(push_event(session_id, "script", final_state["output_script"]))
-                asyncio.run(push_event(session_id, "chat", {"role": "assistant", "content": "✅ Your final script is ready! Check the Output tab."}))
-        except Exception:
-            pass
-
-    except Exception as e:
-        import traceback
-        err_detail = traceback.format_exc()
-        print(f"Error in graph thread:\n{err_detail}")
-        asyncio.run(push_event(session_id, "error", {"message": str(e)}))
-        
-    finally:
-        asyncio.run(push_event(session_id, "status", {"node": "idle", "message": "Waiting for input..."}))
-
-
-@app.get("/")
-def serve_ui():
-    """Serve the simple HTML React UI."""
-    html_path = Path(__file__).parent / "ui.html"
-    if html_path.exists():
-        return HTMLResponse(content=html_path.read_text())
-    return HTMLResponse(content="<h1>UI File not found</h1>")
-
-@app.get("/api/start")
-def start_session():
-    """Start a new Arcwright session."""
-    session_id = str(uuid.uuid4())
-    
-    # Run graph initialization in background
-    threading.Thread(target=_run_graph_thread, args=(session_id, "", True)).start()
-    
-    return {"session_id": session_id}
 
 @app.post("/api/chat")
 def send_chat(req: ChatRequest):
-    """Send a message to the active session."""
+    """Kirim pesan user ke pipeline."""
     if not req.message.strip():
-        raise HTTPException(status_code=400, detail="Empty message")
-        
-    threading.Thread(target=_run_graph_thread, args=(req.session_id, req.message, False)).start()
+        raise HTTPException(status_code=400, detail="Pesan kosong")
+    if req.session_id not in session_queues:
+        raise HTTPException(status_code=404, detail="Session tidak ditemukan")
+    threading.Thread(
+        target=_run_graph_thread,
+        args=(req.session_id, req.message, False),
+        daemon=True,
+    ).start()
     return {"status": "processing"}
+
 
 @app.get("/api/stream")
 async def stream_events(session_id: str, request: Request):
-    """SSE endpoint for real-time updates."""
-    q = get_or_create_queue(session_id)
-    
-    async def event_generator():
+    """SSE endpoint — kirim real-time events ke browser."""
+    if session_id not in session_queues:
+        session_queues[session_id] = asyncio.Queue()
+
+    q = session_queues[session_id]
+
+    async def generator():
         while True:
             if await request.is_disconnected():
                 break
             try:
-                # Wait for next event
-                msg = await asyncio.wait_for(q.get(), timeout=1.0)
+                msg = await asyncio.wait_for(q.get(), timeout=2.0)
                 yield msg
             except asyncio.TimeoutError:
-                # Send heartbeat
-                yield {"event": "ping", "data": json.dumps({"status": "alive"})}
-                
-    return EventSourceResponse(event_generator())
+                yield {"event": "ping", "data": "{}"}
+
+    return EventSourceResponse(generator())
+
 
 if __name__ == "__main__":
     import uvicorn
-    print("Starting Arcwright Web UI on http://localhost:8000")
-    uvicorn.run("api_server:app", host="0.0.0.0", port=8000, reload=True)
+    print("🎭 Arcwright Web UI → http://localhost:8000")
+    uvicorn.run("api_server:app", host="0.0.0.0", port=8000, reload=False)
