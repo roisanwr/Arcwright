@@ -17,6 +17,7 @@ forge/data/*.json
 
 # ChromaDB vector store (regenerate from chunks.json)
 forge/output/chroma_db/
+forge/output/chroma_db_corrupt/
 chroma_db_backup.tar.gz
 ChromaDB_Readme.md
 
