@@ -249,6 +249,13 @@ function App() {
         }
     };
 
+    const handleKeyDown = (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage(e);
+        }
+    };
+
     // ── Render ────────────────────────────────────────────────────────────────
     return (
         <div className="flex flex-1 h-screen overflow-hidden">
@@ -311,18 +318,20 @@ function App() {
                 {/* Input */}
                 <div className="shrink-0 px-4 py-3 bg-gray-900 border-t border-gray-800">
                     <form onSubmit={sendMessage} className="flex gap-2">
-                        <input
-                            type="text"
+                        <textarea
                             value={inputValue}
                             onChange={e => setInputValue(e.target.value)}
-                            placeholder={isProcessing ? "Yui sedang berpikir..." : "Ketik pesanmu..."}
+                            onKeyDown={handleKeyDown}
+                            placeholder={isProcessing ? "Yui sedang berpikir..." : "Ketik pesanmu (Tekan Enter untuk kirim, Shift+Enter untuk baris baru)..."}
                             disabled={isProcessing || !connected}
-                            className="flex-1 bg-gray-800 border border-gray-700 text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-40 placeholder-gray-600"
+                            rows={1}
+                            className="flex-1 bg-gray-800 border border-gray-700 text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-40 placeholder-gray-600 resize-none overflow-hidden"
+                            style={{ minHeight: '44px', maxHeight: '120px' }}
                         />
                         <button
                             type="submit"
                             disabled={isProcessing || !inputValue.trim() || !connected}
-                            className="bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors"
+                            className="bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors shrink-0 self-end h-[44px]"
                         >
                             {isProcessing ? "⏳" : "Kirim"}
                         </button>
