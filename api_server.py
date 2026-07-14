@@ -102,7 +102,11 @@ def _run_graph_thread(session_id: str, message: str, is_new: bool = False):
         # If we exited the loop, check if we hit an interrupt
         state_info = graph.get_state(config)
         if hasattr(state_info, "next") and state_info.next:
-            interrupts = state_info.tasks[0].interrupts if hasattr(state_info.tasks[0], "interrupts") else []
+            interrupts = []
+            if hasattr(state_info, "tasks") and state_info.tasks:
+                if hasattr(state_info.tasks[0], "interrupts") and state_info.tasks[0].interrupts is not None:
+                    interrupts = state_info.tasks[0].interrupts
+            
             if interrupts:
                 payload = interrupts[0].value if hasattr(interrupts[0], "value") else interrupts[0]
                 
@@ -120,12 +124,18 @@ def _run_graph_thread(session_id: str, message: str, is_new: bool = False):
                     asyncio.run(push_event(session_id, "outline", outline))
 
         # Check if pipeline is fully complete
-        final_state = graph.get_state(config).values
-        if final_state and final_state.get("output_script"):
-            asyncio.run(push_event(session_id, "script", final_state["output_script"]))
-            asyncio.run(push_event(session_id, "chat", {"role": "assistant", "content": "✅ Your final script is ready! Check the Output tab."}))
+        try:
+            final_state = graph.get_state(config).values
+            if final_state and final_state.get("output_script"):
+                asyncio.run(push_event(session_id, "script", final_state["output_script"]))
+                asyncio.run(push_event(session_id, "chat", {"role": "assistant", "content": "✅ Your final script is ready! Check the Output tab."}))
+        except Exception:
+            pass
 
     except Exception as e:
+        import traceback
+        err_detail = traceback.format_exc()
+        print(f"Error in graph thread:\n{err_detail}")
         asyncio.run(push_event(session_id, "error", {"message": str(e)}))
         
     finally:

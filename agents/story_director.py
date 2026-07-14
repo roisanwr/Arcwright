@@ -33,7 +33,8 @@ def story_director_node(state: ArcwrightState, llm=None) -> dict:
 
     # Enriching → Outlining transition (after BOTH parallel agents complete)
     # Both deep_dive (dict with keys) and web_research (non-empty list) must be ready
-    if phase == "enriching" and deep_dive and web_research and not outline:
+    # Note: web_research might be empty if TAVILY_API_KEY is not set, so we only check if deep_dive is done
+    if phase == "enriching" and deep_dive and not outline:
         return {"current_phase": "outlining"}
 
     # Outlining → Validating (after outline is created)
@@ -82,7 +83,7 @@ def story_director_routing(state: ArcwrightState) -> str | list:
         # Only dispatch agents that haven't completed yet (avoid re-running done work)
         if not deep_dive:
             missing.append(Send("deep_dive", state))
-        if not web_research:
+        if not web_research and settings.TAVILY_API_KEY:
             missing.append(Send("web_researcher", state))
         if missing:
             return missing  # Parallel Send() for whichever is still missing
