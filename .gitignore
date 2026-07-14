@@ -21,6 +21,9 @@ forge/output/chroma_db_corrupt/
 chroma_db_backup.tar.gz
 ChromaDB_Readme.md
 
+# Qdrant vector storage (docker volume, OS-agnostic)
+qdrant_storage/
+
 # Temp uploads
 forge/uploads/
 

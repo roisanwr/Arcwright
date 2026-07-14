@@ -1,7 +1,7 @@
 # Core pipeline
 marker-pdf>=1.0.0
 sentence-transformers>=3.0.0
-chromadb>=0.6.0
+qdrant-client>=1.9.0
 rank-bm25>=0.2.0
 
 # Multi-format extraction
