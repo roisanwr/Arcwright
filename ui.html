@@ -141,18 +141,21 @@ function App() {
     const [statusMsg,    setStatusMsg]    = useState("Memulai session...");
     const [isProcessing, setIsProcessing] = useState(true);
     const [processLog,   setProcessLog]   = useState([]);
+    const [reasonings,   setReasonings]   = useState([]);
     const [script,       setScript]       = useState(null);
-    const [sidebarTab,   setSidebarTab]   = useState("log"); // "log" | "script"
+    const [sidebarTab,   setSidebarTab]   = useState("log"); // "log" | "reasoning" | "script"
     const [error,        setError]        = useState(null);
     const [connected,    setConnected]    = useState(false);
 
     const messagesEndRef = useRef(null);
+    const reasoningsEndRef = useRef(null);
 
     const scrollToBottom = useCallback(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, []);
 
     useEffect(() => { scrollToBottom(); }, [messages]);
+    useEffect(() => { reasoningsEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [reasonings]);
 
     const addLogEvent = useCallback((node, message) => {
         const now = new Date();
@@ -187,6 +190,11 @@ function App() {
                     const processing = d.node !== "idle";
                     setIsProcessing(processing);
                     addLogEvent(d.node, d.message);
+                });
+
+                evtSource.addEventListener("reasoning", e => {
+                    const r = JSON.parse(e.data);
+                    setReasonings(prev => [...prev, r]);
                 });
 
                 evtSource.addEventListener("script", e => {
@@ -352,17 +360,17 @@ function App() {
             </div>
 
             {/* ── Right: Sidebar ─────────────────────────────────────────── */}
-            <div className="w-80 flex flex-col bg-gray-900 shrink-0">
+            <div className="w-96 flex flex-col bg-gray-900 shrink-0 border-l border-gray-800">
                 {/* Tabs */}
                 <div className="flex border-b border-gray-800 shrink-0">
-                    {[["log", "⚙️ Proses"], ["script", "📄 Skrip"]].map(([tab, label]) => (
+                    {[["log", "⚙️ Proses"], ["reasoning", "🧠 Internal Thought"], ["script", "📄 Skrip"]].map(([tab, label]) => (
                         <button
                             key={tab}
                             onClick={() => setSidebarTab(tab)}
-                            className={`flex-1 py-2.5 text-xs font-medium transition-colors ${
+                            className={`flex-1 py-3 text-[11px] font-medium transition-colors uppercase tracking-wider ${
                                 sidebarTab === tab
-                                    ? "text-blue-400 border-b-2 border-blue-500"
-                                    : "text-gray-500 hover:text-gray-300"
+                                    ? "text-blue-400 border-b-2 border-blue-500 bg-gray-800/50"
+                                    : "text-gray-500 hover:text-gray-300 hover:bg-gray-800/30"
                             }`}
                         >
                             {label}
@@ -375,6 +383,36 @@ function App() {
 
                 {/* Process Log Tab */}
                 {sidebarTab === "log" && <ProcessLog events={processLog} />}
+
+                {/* Reasoning Tab */}
+                {sidebarTab === "reasoning" && (
+                    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                        {reasonings.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center h-full text-center text-gray-600 gap-3 text-sm">
+                                <span className="text-3xl opacity-30">🧠</span>
+                                <p>Belum ada thought process dari AI.<br/>Mulai ngobrol untuk melihat analisis internal agen!</p>
+                            </div>
+                        ) : (
+                            reasonings.map((r, i) => {
+                                const agent = getAgent(r.agent);
+                                return (
+                                    <div key={i} className="bg-gray-950 border border-gray-800 rounded-lg p-3">
+                                        <div className="flex items-center gap-2 mb-2 pb-2 border-b border-gray-800">
+                                            <span className="text-sm">{agent.icon}</span>
+                                            <span className={`${agent.color} font-semibold text-xs`}>{agent.label}</span>
+                                            <span className="text-[10px] text-gray-500 uppercase tracking-wider bg-gray-800 px-1.5 py-0.5 rounded">{r.type}</span>
+                                        </div>
+                                        <div 
+                                            className="markdown text-xs text-gray-400 leading-relaxed font-mono"
+                                            dangerouslySetInnerHTML={{ __html: marked.parse(r.content || "") }}
+                                        />
+                                    </div>
+                                );
+                            })
+                        )}
+                        <div ref={reasoningsEndRef} />
+                    </div>
+                )}
 
                 {/* Script Tab */}
                 {sidebarTab === "script" && (

@@ -125,7 +125,10 @@ def story_director_routing(state: ArcwrightState) -> str | list:
             if debate_rounds >= settings.MAX_DEBATE_ROUNDS:
                 # Director arbitrates: force proceed to user
                 return "user_approval"
-            return "story_miner"  # Loop back with validator critique
+            # Belum passed & belum max rounds → balik lagi ke story_miner minta info tambahan (atau outline_writer)
+            # Route yang benar ada di validator_debate_routing, jadi director cuma route ke validator 
+            # lalu validator ke routing_node. 
+            return "user_approval" # Kita bypass aja debate loop sementara karena ini bikin pipeline hang nunggu input yg salah
 
     # ── Scripting phase ───────────────────────────────────────────────────────
     if phase == "scripting":

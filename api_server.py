@@ -121,11 +121,67 @@ def _run_graph_thread(session_id: str, message: str, is_new: bool = False):
         # ── Stream graph steps ────────────────────────────────────────────────
         for chunk in iterator:
             node_name = list(chunk.keys())[0]
+            node_data = chunk[node_name]
             
             _push(session_id, "status", {
                 "node":    node_name,
                 "message": _agent_label(node_name),
             })
+
+            # Extract reasoning or internal notes from node_data
+            if isinstance(node_data, dict):
+                # 1. Check for agent_notes added in this step
+                if "agent_notes" in node_data:
+                    notes = node_data["agent_notes"]
+                    if isinstance(notes, list):
+                        for note in notes:
+                            if isinstance(note, dict) and "content" in note:
+                                _push(session_id, "reasoning", {
+                                    "agent": node_name,
+                                    "type": note.get("note_type", "internal_note"),
+                                    "content": note["content"]
+                                })
+                
+                # 2. Check for validation result
+                if "validation_result" in node_data and node_data["validation_result"]:
+                    val = node_data["validation_result"]
+                    _push(session_id, "reasoning", {
+                        "agent": "validator",
+                        "type": "scoring",
+                        "content": f"Score: {val.get('score', 0)}/50\nFeedback: {val.get('feedback', '')}\nPassed: {val.get('passed', False)}"
+                    })
+                
+                # 3. Check for deep_dive analysis
+                if "deep_dive_analysis" in node_data and node_data["deep_dive_analysis"]:
+                    dd = node_data["deep_dive_analysis"]
+                    content = "\n".join([f"**{k.capitalize()}**: {v}" for k,v in dd.items() if isinstance(v, str)])
+                    if content:
+                        _push(session_id, "reasoning", {
+                            "agent": "deep_dive",
+                            "type": "analysis",
+                            "content": content
+                        })
+                        
+                # 4. Extract raw AI message thought process if available (some LLMs put it in content or additional_kwargs)
+                if "messages" in node_data:
+                    for msg in node_data.get("messages", []):
+                        if hasattr(msg, "type") and msg.type == "ai":
+                            # Gemini or DeepSeek might put reasoning in additional_kwargs
+                            reasoning = getattr(msg, "additional_kwargs", {}).get("reasoning_content", "")
+                            if reasoning:
+                                _push(session_id, "reasoning", {
+                                    "agent": node_name,
+                                    "type": "chain_of_thought",
+                                    "content": reasoning
+                                })
+                            # Or if it's a tool call
+                            if hasattr(msg, "tool_calls") and msg.tool_calls:
+                                tool_calls_str = "\n".join([f"🛠️ Tool: `{tc['name']}`\nArgs: {tc['args']}" for tc in msg.tool_calls])
+                                _push(session_id, "reasoning", {
+                                    "agent": node_name,
+                                    "type": "tool_execution",
+                                    "content": tool_calls_str
+                                })
 
         # ── Cek interrupt setelah loop selesai ────────────────────────────────
         state_info = graph.get_state(config)
@@ -156,7 +212,7 @@ def _run_graph_thread(session_id: str, message: str, is_new: bool = False):
                         _push(session_id, "chat", {"role": "assistant", "content": out_str})
                         _push(session_id, "outline", outline)
             else:
-                # Interrupt tapi gak ada payload — cek apakah pipeline nunggu story_miner
+                # Interrupt tapi gak ada payload — cek apakah pipeline nunggu story_miner atau user_approval
                 next_nodes = getattr(state_info, "next", ())
                 if "story_miner" in next_nodes:
                     # Pipeline nunggu input user tapi interrupt belum tersimpan — 
@@ -167,6 +223,18 @@ def _run_graph_thread(session_id: str, message: str, is_new: bool = False):
                         if hasattr(msg, "type") and msg.type == "ai" and msg.content:
                             _push(session_id, "chat", {"role": "assistant", "content": msg.content})
                             break
+                elif "user_approval" in next_nodes:
+                    # Kadang interrupt payload gak kebaca dari state.tasks[0], ambil dari state.values manual
+                    state_vals = getattr(state_info, "values", {}) or {}
+                    outline = state_vals.get("story_outline", {})
+                    if outline:
+                        out_str = "## 📋 Story Outline-mu\n\n"
+                        for k, v in outline.items():
+                            if isinstance(v, str) and v.strip():
+                                out_str += f"- **{k.capitalize()}**: {v}\n"
+                        out_str += "\n---\nKetik **approve**, **revise**, atau **reject**."
+                        _push(session_id, "chat", {"role": "assistant", "content": out_str})
+                        _push(session_id, "outline", outline)
 
         # ── Cek script final ──────────────────────────────────────────────────
         final_values = getattr(graph.get_state(config), "values", {}) or {}
