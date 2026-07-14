@@ -1,0 +1,12 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: arcwright_qdrant
+    ports:
+      - "6333:6333"   # REST API (yang dipakai Python)
+      - "6334:6334"   # gRPC (opsional, untuk performa tinggi)
+    volumes:
+      - ./qdrant_storage:/qdrant/storage   # data tersimpan di folder lokal
+    restart: unless-stopped
+    environment:
+      - QDRANT__LOG_LEVEL=INFO
