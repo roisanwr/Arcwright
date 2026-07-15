@@ -128,6 +128,16 @@ def _run_graph_thread(session_id: str, message: str, is_new: bool = False):
                 "message": _agent_label(node_name),
             })
 
+            # Check and push explicit Thought Process
+            if isinstance(node_data, dict) and "thought_process" in node_data:
+                for tp in node_data["thought_process"]:
+                    _push(session_id, "reasoning", {
+                        "agent": tp.get("agent", node_name),
+                        "type": "thought_process",
+                        "content": tp.get("thought", ""),
+                        "data": tp.get("data", None)
+                    })
+
             # Extract reasoning or internal notes from node_data
             if isinstance(node_data, dict):
                 # 1. Check for agent_notes added in this step
@@ -137,7 +147,7 @@ def _run_graph_thread(session_id: str, message: str, is_new: bool = False):
                         for note in notes:
                             if isinstance(note, dict) and "content" in note:
                                 _push(session_id, "reasoning", {
-                                    "agent": node_name,
+                                    "agent": note.get("agent_name", node_name),
                                     "type": note.get("note_type", "internal_note"),
                                     "content": note["content"]
                                 })

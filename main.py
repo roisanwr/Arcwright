@@ -68,7 +68,7 @@ def _get_interrupt_payload(result: dict) -> dict | None:
 
 # ── Main loop ──────────────────────────────────────────────────────────────────
 
-def run_session(platform: str = "general", user_name: str = "User"):
+def run_session(platform: str = "general", user_name: str = "User", debug: bool = False):
     """Run an interactive storytelling session."""
     _print_banner()
 
@@ -87,10 +87,24 @@ def run_session(platform: str = "general", user_name: str = "User"):
 
     print(f"  👋 Hi {user_name}! I'm Yui, your storytelling coach.")
     print(f"  🎯 Target platform: {platform}")
+    if debug:
+        print(f"  🔍 Debug Mode: ENABLED")
     print(f"  💡 Type 'quit' to exit at any time.\n")
 
     # Initial greeting from Story Director / Story Miner
-    result = graph.invoke(state, config)
+    if debug:
+        print("\n  [DEBUG] Starting graph.invoke()...")
+    
+    # Enable streaming for debug mode to capture intermediate thoughts
+    if debug:
+        result = state
+        for event in graph.stream(state, config, stream_mode="values"):
+            if "thought_process" in event and event["thought_process"]:
+                latest_thought = event["thought_process"][-1]
+                print(f"  [DEBUG Thought - {latest_thought.get('agent', 'Unknown')}] {latest_thought.get('thought', '')}")
+            result = event
+    else:
+        result = graph.invoke(state, config)
 
     MAX_TURNS = 50  # Safety guard — prevent infinite loops
     turn = 0
@@ -129,7 +143,15 @@ def run_session(platform: str = "general", user_name: str = "User"):
                 else:
                     print("  Please type 'approve', 'revise', or 'reject'")
 
-            result = graph.invoke(Command(resume=decision), config)
+            if debug:
+                print(f"\n  [DEBUG] Resuming graph with decision: {decision}")
+                for event in graph.stream(Command(resume=decision), config, stream_mode="values"):
+                    if "thought_process" in event and event["thought_process"]:
+                        latest_thought = event["thought_process"][-1]
+                        print(f"  [DEBUG Thought - {latest_thought.get('agent', 'Unknown')}] {latest_thought.get('thought', '')}")
+                    result = event
+            else:
+                result = graph.invoke(Command(resume=decision), config)
             continue
             
         elif is_interrupted and interrupt_payload and interrupt_payload.get("type") == "interview_question":
@@ -151,7 +173,15 @@ def run_session(platform: str = "general", user_name: str = "User"):
             turn += 1  # Increment turn counter
 
             resume_data = {"messages": [{"role": "user", "content": user_input}]}
-            result = graph.invoke(Command(resume=resume_data), config)
+            if debug:
+                print(f"\n  [DEBUG] Resuming graph with user input")
+                for event in graph.stream(Command(resume=resume_data), config, stream_mode="values"):
+                    if "thought_process" in event and event["thought_process"]:
+                        latest_thought = event["thought_process"][-1]
+                        print(f"  [DEBUG Thought - {latest_thought.get('agent', 'Unknown')}] {latest_thought.get('thought', '')}")
+                    result = event
+            else:
+                result = graph.invoke(Command(resume=resume_data), config)
             continue
 
         # Check if pipeline is complete (script generated)
@@ -164,7 +194,15 @@ def run_session(platform: str = "general", user_name: str = "User"):
 
         # If not interrupted and not complete, this is an internal state transition
         # We just need to resume execution until the next interrupt
-        result = graph.invoke(None, config)
+        if debug:
+            print(f"\n  [DEBUG] Continuing internal state transition...")
+            for event in graph.stream(None, config, stream_mode="values"):
+                if "thought_process" in event and event["thought_process"]:
+                    latest_thought = event["thought_process"][-1]
+                    print(f"  [DEBUG Thought - {latest_thought.get('agent', 'Unknown')}] {latest_thought.get('thought', '')}")
+                result = event
+        else:
+            result = graph.invoke(None, config)
         continue
 
     else:
@@ -190,9 +228,14 @@ def main():
         default="User",
         help="Your name (optional)",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug mode to show agent chain of thought (CoT)",
+    )
     args = parser.parse_args()
 
-    run_session(platform=args.platform, user_name=args.name)
+    run_session(platform=args.platform, user_name=args.name, debug=args.debug)
 
 
 if __name__ == "__main__":

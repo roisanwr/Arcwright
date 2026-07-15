@@ -7,7 +7,7 @@ from datetime import datetime
 from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import HumanMessage
 
-from agents.state import ArcwrightState, StoryFragment, AgentNote
+from agents.state import ArcwrightState, StoryFragment, AgentNote, ThoughtProcess
 
 
 _SYSTEM_PROMPT = """You are the Story Mining Agent — an empathetic interviewer and story archaeologist.
@@ -46,8 +46,16 @@ def story_miner_node(state: ArcwrightState, llm) -> dict:
     3. Kalau tidak (first call) → generate pertanyaan pembuka, interrupt untuk tunggu user
     """
     from langgraph.types import interrupt
+    import json
 
     messages = state.get("messages", [])
+    
+    thought = ThoughtProcess(
+        agent="story_miner",
+        timestamp=datetime.now().isoformat(),
+        thought=f"Analyzing {len(messages)} messages. Checking if new fragments can be extracted.",
+        data=None
+    )
 
     agent = create_react_agent(
         model=llm,
@@ -73,11 +81,15 @@ def story_miner_node(state: ArcwrightState, llm) -> dict:
 
     if last_message is None:
         # Fallback jika tidak ada pesan AI baru
-        return {}
+        return {"thought_process": [thought]}
 
     response_text = last_message.content
     new_fragments = _parse_fragments(response_text)
     clean_response = _strip_fragment_tags(response_text)
+    
+    thought["thought"] = f"Generated response. Extracted {len(new_fragments)} fragments."
+    if new_fragments:
+        thought["data"] = {"extracted": [f["text"] for f in new_fragments]}
 
     # Interrupt: tampilkan pertanyaan ke user, tunggu jawaban
     user_response = interrupt({
@@ -95,6 +107,7 @@ def story_miner_node(state: ArcwrightState, llm) -> dict:
         "messages": [
             user_message,
         ],
+        "thought_process": [thought]
     }
 
     if new_fragments:

@@ -17,8 +17,8 @@
         .markdown strong { font-weight: 700; }
         .markdown h2 { font-size: 1.1em; font-weight: 700; margin: 0.6em 0 0.3em; }
         .markdown h3 { font-size: 1em; font-weight: 600; margin: 0.4em 0 0.2em; }
-        .markdown code { background: #374151; padding: 1px 5px; border-radius: 4px; font-size: 0.85em; }
-        .markdown hr { border-color: #374151; margin: 0.8em 0; }
+        .markdown pre { background: #1f2937; padding: 0.5em; border-radius: 4px; overflow-x: auto; font-size: 0.85em; margin-bottom: 0.6em; }
+        .markdown pre code { background: transparent; padding: 0; }
 
         @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
         .dot-blink { animation: blink 1.2s infinite; }
@@ -118,7 +118,7 @@ function ChatBubble({ msg }) {
                     Y
                 </div>
             )}
-            <div className={`max-w-[78%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+            <div className={`max-w-[90%] md:max-w-[78%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
                 isUser
                     ? "bg-blue-600 text-white rounded-br-none"
                     : "bg-gray-800 border border-gray-700 text-gray-200 rounded-bl-none"
@@ -146,6 +146,7 @@ function App() {
     const [sidebarTab,   setSidebarTab]   = useState("log"); // "log" | "reasoning" | "script"
     const [error,        setError]        = useState(null);
     const [connected,    setConnected]    = useState(false);
+    const [showMobileSidebar, setShowMobileSidebar] = useState(false);
 
     const messagesEndRef = useRef(null);
     const reasoningsEndRef = useRef(null);
@@ -195,6 +196,10 @@ function App() {
                 evtSource.addEventListener("reasoning", e => {
                     const r = JSON.parse(e.data);
                     setReasonings(prev => [...prev, r]);
+                    // Auto-switch to reasoning tab if it's explicitly a thought process and user is currently on log
+                    if (r.type === "thought_process" && sidebarTab === "log") {
+                         setSidebarTab("reasoning");
+                    }
                 });
 
                 evtSource.addEventListener("script", e => {
@@ -266,10 +271,10 @@ function App() {
 
     // ── Render ────────────────────────────────────────────────────────────────
     return (
-        <div className="flex flex-1 h-screen overflow-hidden">
+        <div className="flex flex-col md:flex-row flex-1 h-screen overflow-hidden">
 
             {/* ── Left: Chat ─────────────────────────────────────────────── */}
-            <div className="flex flex-col flex-1 min-w-0 border-r border-gray-800">
+            <div className="flex flex-col flex-1 min-w-0 md:border-r border-gray-800 h-[55vh] md:h-auto overflow-hidden">
 
                 {/* Header */}
                 <div className="flex items-center justify-between px-4 py-3 bg-gray-900 border-b border-gray-800 shrink-0">
@@ -282,14 +287,22 @@ function App() {
                             <p className="text-xs text-gray-500">Storytelling AI · Gemini via 9Router</p>
                         </div>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
                         <StatusBar node={currentNode} message={statusMsg} isProcessing={isProcessing} />
+                        {/* Mobile sidebar toggle is removed because we display it at bottom instead */}
                         <button
                             onClick={() => window.location.reload()}
                             title="Mulai Sesi Baru"
-                            className="bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded-full text-xs border border-gray-700 transition-colors"
+                            className="bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded-full text-xs border border-gray-700 transition-colors hidden md:block"
                         >
                             🔄 Reset
+                        </button>
+                        <button
+                            onClick={() => window.location.reload()}
+                            title="Mulai Sesi Baru"
+                            className="bg-gray-800 text-gray-300 p-1.5 rounded-full text-xs border border-gray-700 md:hidden"
+                        >
+                            🔄
                         </button>
                     </div>
                 </div>
@@ -360,7 +373,7 @@ function App() {
             </div>
 
             {/* ── Right: Sidebar ─────────────────────────────────────────── */}
-            <div className="w-96 flex flex-col bg-gray-900 shrink-0 border-l border-gray-800">
+            <div className="w-full md:w-[450px] flex flex-col bg-gray-900 shrink-0 border-t md:border-t-0 md:border-l border-gray-800 h-[45vh] md:h-auto">
                 {/* Tabs */}
                 <div className="flex border-b border-gray-800 shrink-0">
                     {[["log", "⚙️ Proses"], ["reasoning", "🧠 Internal Thought"], ["script", "📄 Skrip"]].map(([tab, label]) => (
@@ -396,16 +409,25 @@ function App() {
                             reasonings.map((r, i) => {
                                 const agent = getAgent(r.agent);
                                 return (
-                                    <div key={i} className="bg-gray-950 border border-gray-800 rounded-lg p-3">
-                                        <div className="flex items-center gap-2 mb-2 pb-2 border-b border-gray-800">
-                                            <span className="text-sm">{agent.icon}</span>
-                                            <span className={`${agent.color} font-semibold text-xs`}>{agent.label}</span>
-                                            <span className="text-[10px] text-gray-500 uppercase tracking-wider bg-gray-800 px-1.5 py-0.5 rounded">{r.type}</span>
+                                    <div key={i} className="bg-gray-950 border border-gray-800 rounded-lg p-3 relative shadow-inner">
+                                        <div className="flex items-center justify-between mb-2 pb-2 border-b border-gray-800/80">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-sm">{agent.icon}</span>
+                                                <span className={`${agent.color} font-semibold text-xs`}>{agent.label}</span>
+                                            </div>
+                                            <span className="text-[10px] text-gray-400 font-mono tracking-wider bg-gray-800 px-1.5 py-0.5 rounded border border-gray-700 shadow-sm">{r.type.replace('_', ' ')}</span>
                                         </div>
                                         <div 
-                                            className="markdown text-xs text-gray-400 leading-relaxed font-mono"
+                                            className="markdown text-xs text-gray-300 leading-relaxed font-mono whitespace-pre-wrap break-words"
                                             dangerouslySetInnerHTML={{ __html: marked.parse(r.content || "") }}
                                         />
+                                        {r.data && (
+                                            <div className="mt-2 pt-2 border-t border-gray-800/50">
+                                                <pre className="text-[10px] text-gray-500 overflow-x-auto whitespace-pre-wrap bg-gray-900/50 p-2 rounded border border-gray-800">
+                                                    {JSON.stringify(r.data, null, 2)}
+                                                </pre>
+                                            </div>
+                                        )}
                                     </div>
                                 );
                             })

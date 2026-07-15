@@ -4,7 +4,7 @@ All agent communication happens via this TypedDict (Blackboard pattern).
 No direct agent-to-agent calls.
 """
 import operator
-from typing import Annotated, Literal, Optional
+from typing import Annotated, Literal, Optional, Any
 from typing_extensions import TypedDict
 from langgraph.graph.message import add_messages
 
@@ -56,6 +56,11 @@ class OutputScript(TypedDict):
     platform_variant: str
     voice_notes: dict[str, str]
 
+class ThoughtProcess(TypedDict):
+    agent: str
+    timestamp: str
+    thought: str
+    data: Optional[dict[str, Any]]
 
 # ── Main Session State ────────────────────────────────────────────────────────
 
@@ -76,6 +81,7 @@ class ArcwrightState(TypedDict):
 
     # ── Inter-agent communication board (append-only) ─────────────
     agent_notes: Annotated[list[AgentNote], operator.add]
+    thought_process: Annotated[list[ThoughtProcess], operator.add] # For Dev Debugging
 
     # ── Knowledge enrichment (overwrite each cycle) ───────────────
     rag_context: list[dict]          # Latest RAG results

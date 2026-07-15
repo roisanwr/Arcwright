@@ -4,10 +4,11 @@ Controls pipeline flow via current_phase state machine.
 Also contains user_approval_node for human-in-the-loop.
 """
 from typing import Literal
+from datetime import datetime
 from langgraph.types import interrupt, Command
 
 from config import settings
-from agents.state import ArcwrightState
+from agents.state import ArcwrightState, ThoughtProcess
 
 
 # ── Story Director Routing ─────────────────────────────────────────────────────
@@ -18,7 +19,7 @@ def story_director_node(state: ArcwrightState, llm=None) -> dict:
     Pure logic node: no LLM call, just phase transitions.
 
     Reads:  current_phase, story_fragments, deep_dive_analysis, validation_result, etc.
-    Writes: current_phase
+    Writes: current_phase, thought_process
     """
     phase = state.get("current_phase", "mining")
     messages = state.get("messages", [])
@@ -27,6 +28,13 @@ def story_director_node(state: ArcwrightState, llm=None) -> dict:
     validation = state.get("validation_result")
     outline = state.get("story_outline")
     debate_rounds = state.get("debate_rounds", 0)
+    
+    thought = ThoughtProcess(
+        agent="story_director",
+        timestamp=datetime.now().isoformat(),
+        thought=f"Evaluating state in phase '{phase}'.",
+        data={"fragments_count": len(fragments)}
+    )
 
     if phase == "mining":
         # Extract fragments ready signal from last message if any
@@ -39,27 +47,33 @@ def story_director_node(state: ArcwrightState, llm=None) -> dict:
                 miner_ready = True
                 
         if len(fragments) >= settings.MIN_STORY_FRAGMENTS or miner_ready:
-            return {"current_phase": "enriching"}
+            thought["thought"] += " Sufficient fragments gathered. Transitioning to 'enriching'."
+            return {"current_phase": "enriching", "thought_process": [thought]}
 
     # Enriching → Outlining transition (after BOTH parallel agents complete)
     # Both deep_dive (dict with keys) and web_research (non-empty list) must be ready
     # Note: web_research might be empty if TAVILY_API_KEY is not set, so we only check if deep_dive is done
     if phase == "enriching" and deep_dive and not outline:
-        return {"current_phase": "outlining"}
+        thought["thought"] += " Enrichment complete. Transitioning to 'outlining'."
+        return {"current_phase": "outlining", "thought_process": [thought]}
 
     # Outlining → Validating (after outline is created)
     if phase == "outlining" and outline:
-        return {"current_phase": "validating"}
+        thought["thought"] += " Outline generated. Transitioning to 'validating'."
+        return {"current_phase": "validating", "thought_process": [thought]}
 
     # Validating — check if debate rounds maxed
     if phase == "validating" and validation:
         if validation.get("passed"):
-            return {}  # Stay in validating, routing handles user_approval
+            thought["thought"] += " Validation passed. Waiting for user approval."
+            return {"thought_process": [thought]}  # Stay in validating, routing handles user_approval
         if debate_rounds >= settings.MAX_DEBATE_ROUNDS:
+            thought["thought"] += " Max debate rounds reached. Arbitrating: forcing proceed to 'outlining'."
             # Story Director arbitrates — force proceed
-            return {"current_phase": "outlining", "debate_rounds": 0}
+            return {"current_phase": "outlining", "debate_rounds": 0, "thought_process": [thought]}
 
-    return {}
+    thought["thought"] += " No phase transition needed."
+    return {"thought_process": [thought]}
 
 
 def story_director_routing(state: ArcwrightState) -> str | list:

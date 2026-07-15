@@ -45,4 +45,11 @@ node_modules/
 
 
 .env
-\n# Database\n*.db\n*.db-shm\n*.db-wal\n\n# Backups\n*.tar.gz
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Backups
+*.tar.gz
