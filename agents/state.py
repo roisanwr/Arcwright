@@ -23,11 +23,13 @@ class StoryFragment(TypedDict):
     text: str
     emotion: Optional[str]
     timestamp: str
+    quality_score: int          # 0-10: kualitas fragment (sensory detail, emotion, specificity)
+    source_turn: int            # turn ke berapa fragment ini diambil
 
 
 class AgentNote(TypedDict):
     agent_name: str
-    note_type: Literal["question", "insight", "flag", "suggestion", "critique"]
+    note_type: Literal["question", "insight", "flag", "suggestion", "critique", "targeted_probe"]
     content: str
 
 
@@ -36,6 +38,8 @@ class ValidationResult(TypedDict):
     criteria_scores: dict[str, float]   # {"relatability": 8, ...}
     feedback: str
     passed: bool
+    weak_areas: list[str]               # ["emotional_hook", "originality"] — area yang perlu digali
+    targeted_question: str              # Pertanyaan spesifik yang harus Story Miner tanyakan ke user
 
 
 class StoryOutline(TypedDict):
@@ -56,11 +60,27 @@ class OutputScript(TypedDict):
     platform_variant: str
     voice_notes: dict[str, str]
 
+
 class ThoughtProcess(TypedDict):
     agent: str
     timestamp: str
     thought: str
     data: Optional[dict[str, Any]]
+
+
+class RAGChunk(TypedDict):
+    text: str                   # Full chunk text — tidak di-truncate
+    source: str                 # "Book Title — Section Name"
+    relevance_score: float      # MMR score dari retrieval
+
+
+class RAGResult(TypedDict):
+    query: str                  # Query yang digunakan
+    chunks: list[RAGChunk]      # Raw chunks dari Qdrant (5 chunks)
+    synthesis: str              # LLM synthesis — rangkuman actionable dari chunks
+    source_books: list[str]     # Daftar buku yang dikutip
+    query_purpose: str          # "mining_bootstrap" | "mining_probe" | "enriching" | "outlining" | "scripting"
+
 
 # ── Main Session State ────────────────────────────────────────────────────────
 
@@ -70,6 +90,7 @@ class ArcwrightState(TypedDict):
     current_phase: Literal[
         "mining", "enriching", "validating", "outlining", "scripting", "complete"
     ]
+    turn_count: int             # Hitungan turn interview (untuk tracking)
 
     # ── User context ──────────────────────────────────────────────
     user_profile: UserProfile
@@ -81,10 +102,12 @@ class ArcwrightState(TypedDict):
 
     # ── Inter-agent communication board (append-only) ─────────────
     agent_notes: Annotated[list[AgentNote], operator.add]
-    thought_process: Annotated[list[ThoughtProcess], operator.add] # For Dev Debugging
+    thought_process: Annotated[list[ThoughtProcess], operator.add]  # Dev debugging
 
-    # ── Knowledge enrichment (overwrite each cycle) ───────────────
-    rag_context: list[dict]          # Latest RAG results
+    # ── Knowledge enrichment ──────────────────────────────────────
+    # Structured RAG results — tidak di-truncate, per-purpose
+    rag_results: Annotated[list[RAGResult], operator.add]   # Semua RAG queries (append)
+    rag_context: list[dict]          # Legacy compat — diisi dari rag_results terbaru
     web_research: list[dict]         # Latest web research
     deep_dive_analysis: dict         # Multi-perspective analysis
 
@@ -97,6 +120,11 @@ class ArcwrightState(TypedDict):
     story_outline: Optional[StoryOutline]
     output_script: Optional[OutputScript]
 
+    # ── Continuous RAG tracking ──────────────────────────────────
+    rag_fragment_count: int         # Berapa fragments udah diproses Librarian
+    rag_bootstrapped: bool          # Apakah RAG sudah di-bootstrap sebelum interview pertama
+
     # ── Control flags ─────────────────────────────────────────────
     outline_approved: bool
     error_count: int
+    targeted_probe_mode: bool       # True kalau Story Miner lagi follow-up dari Validator critique

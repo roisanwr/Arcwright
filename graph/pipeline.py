@@ -2,6 +2,14 @@
 Arcwright LangGraph Pipeline — StateGraph definition and compilation.
 Wires all 8 agents together with the Story Director as orchestrator.
 Tiap agent lazy-load LLM-nya sendiri via get_llm_for_agent().
+
+Pipeline flow:
+  START → story_director → [routing]:
+    mining:    rag_librarian (bootstrap) → story_miner ↔ rag_librarian (continuous)
+    enriching: deep_dive ∥ web_researcher (parallel Send)
+    outlining: rag_librarian (outlining query) → outline_writer
+    validating: validator → [debate routing]
+    scripting: rag_librarian (scripting query) → script_writer → END
 """
 import uuid
 
@@ -34,7 +42,7 @@ def create_arcwright_graph(checkpointer=None):
     """
     def make_node(fn, agent_name: str):
         """Wrap agent node — lazy-load per-agent LLM on first call."""
-        _llm_ref = [None]  # mutable container for lazy init
+        _llm_ref = [None]
 
         def node(state: ArcwrightState) -> dict:
             if _llm_ref[0] is None:
@@ -46,17 +54,17 @@ def create_arcwright_graph(checkpointer=None):
 
     builder = StateGraph(ArcwrightState)
 
-    # ── Register nodes — setiap agent pakai LLM config-nya sendiri ───────────
-    builder.add_node("story_director", make_node(story_director_node, "story_director"))
-    builder.add_node("story_miner",    make_node(story_miner_node,    "story_miner"))
-    builder.add_node("rag_librarian",  make_node(rag_librarian_node,  "rag_librarian"))
-    builder.add_node("web_researcher", make_node(web_researcher_node, "web_researcher"))
-    builder.add_node("deep_dive",      make_node(deep_dive_node,      "deep_dive"))
-    builder.add_node("validator",      make_node(validator_node,      "validator"))
-    builder.add_node("outline_writer", make_node(outline_writer_node, "outline_writer"))
-    builder.add_node("script_writer",  make_node(script_writer_node,  "script_writer"))
-    # user_approval_node has no llm — direct registration
-    builder.add_node("user_approval",  user_approval_node)
+    # ── Register nodes ────────────────────────────────────────────────────────
+    builder.add_node("story_director",  make_node(story_director_node, "story_director"))
+    builder.add_node("story_miner",     make_node(story_miner_node,    "story_miner"))
+    builder.add_node("rag_librarian",   make_node(rag_librarian_node,  "rag_librarian"))
+    builder.add_node("web_researcher",  make_node(web_researcher_node, "web_researcher"))
+    builder.add_node("deep_dive",       make_node(deep_dive_node,      "deep_dive"))
+    builder.add_node("validator",       make_node(validator_node,      "validator"))
+    builder.add_node("outline_writer",  make_node(outline_writer_node, "outline_writer"))
+    builder.add_node("script_writer",   make_node(script_writer_node,  "script_writer"))
+    # user_approval_node has no llm
+    builder.add_node("user_approval",   user_approval_node)
 
     # ── Entry point ───────────────────────────────────────────────────────────
     builder.add_edge(START, "story_director")
@@ -66,7 +74,7 @@ def create_arcwright_graph(checkpointer=None):
                   "deep_dive", "outline_writer", "user_approval"]:
         builder.add_edge(agent, "story_director")
 
-    # ── Script Writer → END (final output, no routing needed) ────────────────
+    # ── Script Writer → END ───────────────────────────────────────────────────
     builder.add_edge("script_writer", END)
 
     # ── Story Director conditional routing ────────────────────────────────────
@@ -75,19 +83,19 @@ def create_arcwright_graph(checkpointer=None):
         story_director_routing,
         {
             "story_director":  "story_director",   # enriching wait-loop self-route
-            "story_miner":    "story_miner",
-            "rag_librarian":  "rag_librarian",
-            "web_researcher": "web_researcher",
-            "deep_dive":      "deep_dive",
-            "validator":      "validator",
-            "outline_writer": "outline_writer",
-            "user_approval":  "user_approval",
-            "script_writer":  "script_writer",
-            END:              END,
+            "story_miner":     "story_miner",
+            "rag_librarian":   "rag_librarian",
+            "web_researcher":  "web_researcher",
+            "deep_dive":       "deep_dive",
+            "validator":       "validator",
+            "outline_writer":  "outline_writer",
+            "user_approval":   "user_approval",
+            "script_writer":   "script_writer",
+            END:               END,
         },
     )
 
-    # ── Validator debate routing ───────────────────────────────────────────────
+    # ── Validator debate routing ──────────────────────────────────────────────
     builder.add_conditional_edges(
         "validator",
         validator_debate_routing,
@@ -104,7 +112,7 @@ def create_arcwright_graph(checkpointer=None):
 
     return builder.compile(
         checkpointer=checkpointer,
-        interrupt_before=["user_approval"],  # Hanya interrupt sebelum outline approval
+        interrupt_before=["user_approval"],  # Pause sebelum outline approval
     )
 
 
@@ -117,6 +125,7 @@ def make_initial_state(
     return ArcwrightState(
         session_id=session_id or str(uuid.uuid4()),
         current_phase="mining",
+        turn_count=0,
         user_profile={
             "name": user_name,
             "platform_target": platform,
@@ -127,6 +136,8 @@ def make_initial_state(
         story_fragments=[],
         interview_questions_asked=[],
         agent_notes=[],
+        thought_process=[],
+        rag_results=[],
         rag_context=[],
         web_research=[],
         deep_dive_analysis={},
@@ -135,6 +146,9 @@ def make_initial_state(
         debate_log=[],
         story_outline=None,
         output_script=None,
+        rag_fragment_count=0,
+        rag_bootstrapped=False,
         outline_approved=False,
         error_count=0,
+        targeted_probe_mode=False,
     )

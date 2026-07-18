@@ -63,8 +63,10 @@ def web_researcher_node(state: ArcwrightState, llm) -> dict:
     platform = state.get("user_profile", {}).get("platform_target", "general")
     themes = " ".join(f["text"][:100] for f in fragments[:3])
 
+    from datetime import datetime
+    current_year = datetime.now().year
     query = (
-        f"What storytelling trends are popular on {platform} in 2025 related to: {themes}. "
+        f"What storytelling trends are popular on {platform} in {current_year} related to: {themes}. "
         f"What makes content resonate with this audience?"
     )
 

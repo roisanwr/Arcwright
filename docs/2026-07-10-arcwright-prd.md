@@ -93,7 +93,7 @@ Membangun sistem AI multi-agent yang membantu **siapa pun** menemukan cerita ber
 |----|------------|----------|--------------|
 | FR-01 | System must have a **Story Director** orchestrator that routes tasks to specialist agents | P0 | — |
 | FR-02 | **Story Miner** must conduct interactive Q&A sessions (2-5 rounds) to extract story fragments | P0 | FR-01 |
-| FR-03 | **RAG Librarian** must query the ChromaDB vector store for storytelling frameworks | P0 | FR-01, forge/chroma_db |
+| FR-03 | **RAG Librarian** must query the Qdrant vector store for storytelling frameworks | P0 | FR-01, forge/qdrant_storage |
 | FR-04 | **Web Researcher** must search real-time trends for audience intelligence | P1 | FR-01 |
 | FR-05 | **Validator** must score outlines on 5 criteria (Relatability, Emotional Hook, Originality, Platform Fit, Trend) | P0 | FR-01 |
 | FR-06 | **Deep Dive** must analyze story from ≥3 perspectives (psychological, universal theme, opposing view) | P1 | FR-01 |
@@ -122,7 +122,7 @@ Membangun sistem AI multi-agent yang membantu **siapa pun** menemukan cerita ber
 
 | ID | Requirement | Priority | Dependencies |
 |----|------------|----------|--------------|
-| FR-17 | System must connect to existing Arcwright forge ChromaDB instance | P0 | forge functional |
+| FR-17 | System must connect to existing Arcwright forge Qdrant instance | P0 | forge functional |
 | FR-18 | RAG must support query by technique type (questioning, frameworks, audience psychology) | P1 | FR-17 |
 | FR-19 | RAG results must include source book title and section for traceability | P1 | FR-17 |
 | FR-20 | System must process all 29 storytelling books through the RAG pipeline | P0 | forge pipeline |
@@ -144,7 +144,7 @@ Membangun sistem AI multi-agent yang membantu **siapa pun** menemukan cerita ber
 | ID | Requirement | Target | Measurement |
 |----|------------|--------|-------------|
 | NFR-01 | End-to-end session time (user input → script output) | ≤5 minutes | LangSmith trace |
-| NFR-02 | RAG query response time | ≤2 seconds | ChromaDB metrics |
+| NFR-02 | RAG query response time | ≤2 seconds | Qdrant metrics |
 | NFR-03 | Script generation time | ≤30 seconds | Agent log |
 | NFR-04 | Maximum autonomous steps before human intervention | ≤10 steps | Step counter |
 | NFR-05 | System must handle ≥5 concurrent sessions | ≥5 sessions | Load test |
@@ -174,7 +174,7 @@ Membangun sistem AI multi-agent yang membantu **siapa pun** menemukan cerita ber
 ### 5.1 Technical Constraints
 - **Python 3.12+** — all agents run in Python
 - **Local-first** — no cloud dependency for core pipeline (except LLM API calls)
-- **ChromaDB** — vector store must remain file-based (no separate server)
+- **Qdrant** — vector store must remain file-based (no separate server)
 - **LangGraph** — all orchestration via LangGraph's StateGraph
 - **BGE-M3** — embedding model for RAG (free, local)
 

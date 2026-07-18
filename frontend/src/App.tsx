@@ -1,427 +1,270 @@
 import { useEffect, useRef } from 'react'
-import gsap from 'gsap'
+import * as THREE from 'three'
+import { gsap } from 'gsap'
+
+const NODES = [
+  { id: 39, label: 'Node 1',  x: -4,  y: 1.5,  z: -6,  color: '#4fc3f7' },
+  { id: 30, label: 'Node 2',  x: 6,   y: -0.5,  z: -5,  color: '#4fc3f7' },
+  { id: 58, label: 'Node 3',  x: 8,   y: 1.5,   z: 2,   color: '#4fc3f7' },
+  { id: 61, label: 'Node 4',  x: -2,  y: 0.5,   z: 8,   color: '#4fc3f7' },
+  { id: 62, label: 'Node 5',  x: -7,  y: -0.5,  z: 7,   color: '#4fc3f7' },
+]
+
+const EDGES = [
+  { from: 39, to: 30 },
+  { from: 30, to: 58 },
+  { from: 58, to: 61 },
+  { from: 58, to: 62 },
+]
 
 export default function App() {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
+    if (!containerRef.current) return
 
-    let W = canvas.width = window.innerWidth
-    let H = canvas.height = window.innerHeight
+    const W = window.innerWidth, H = window.innerHeight
+    const scene = new THREE.Scene()
+    scene.background = new THREE.Color('#0b1a2e')
 
-    const BLUE       = '#4fc3f7'
-    const BLUE_LIGHT = '#b3e5fc'
-    let floorY       = H * 0.6
+    // Kamera dari tengah, lurus ke depan (tidak ke bawah)
+    const camera = new THREE.PerspectiveCamera(50, W / H, 0.1, 200)
+    camera.position.set(0, 0, 14)
+    camera.lookAt(0, 0, 0)
 
-    // Koordinat pusat — SEMUA referensi di tengah
-    const CENTER_X = W / 2
+    const renderer = new THREE.WebGLRenderer({ antialias: true })
+    renderer.setSize(W, H)
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    containerRef.current.appendChild(renderer.domElement)
 
-    // Tetesan & Born di tengah
-    let mainDrop = { x: CENTER_X, y: -40, r: 16, alpha: 0 }
-    let ripples: any[] = []
-    let splashParts: any[] = []
-    let miniDrops: any[] = []
-    
-    let phase = 'idle'
+    // Lights
+    scene.add(new THREE.AmbientLight(0x404060))
+    const dl = new THREE.DirectionalLight(0xffffff, 2)
+    dl.position.set(10, 20, 10)
+    scene.add(dl)
+    const fl = new THREE.DirectionalLight(0x4fc3f7, 0.4)
+    fl.position.set(-10, 5, -10)
+    scene.add(fl)
 
-    let bornObj = { 
-      x: CENTER_X, 
-      y: floorY, 
-      r: 0, 
-      alpha: 0, 
-      glow: 0, 
-      textAlpha: 0,
-      zoom: 1, 
-      pulseAmp: 4 
+    // Tetesan Air 3D
+    const dropMat = new THREE.MeshPhongMaterial({
+      color: 0xaaddff, emissive: 0x0288d1,
+      transparent: true, opacity: 1,
+    })
+    const drop = new THREE.Mesh(new THREE.SphereGeometry(0.4, 32, 32), dropMat)
+    drop.position.set(0, 8, 0)
+    scene.add(drop)
+
+    // Ring ripple
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0x4fc3f7, transparent: true, opacity: 0, side: THREE.DoubleSide,
+    })
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.3, 0.5, 32), ringMat)
+    ring.rotation.x = -Math.PI / 2
+    ring.position.set(0, 0, 0)
+    ring.scale.set(0, 0, 0)
+    scene.add(ring)
+
+    // Partikel splash
+    const SPLASH_COUNT = 30
+    const splashMesh = new THREE.InstancedMesh(
+      new THREE.SphereGeometry(0.06, 8, 8),
+      new THREE.MeshPhongMaterial({ color: 0xb3e5fc, transparent: true, opacity: 0 }),
+      SPLASH_COUNT
+    )
+    splashMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+    scene.add(splashMesh)
+
+    const splashVel = []
+    for (let i = 0; i < SPLASH_COUNT; i++) {
+      const a = Math.random() * Math.PI * 2
+      const s = 1 + Math.random() * 3
+      splashVel.push({ vx: Math.cos(a) * s * 0.5, vy: 2 + Math.random() * 3, vz: Math.sin(a) * s * 0.5, sc: 0.3 + Math.random() * 0.7 })
     }
+    const dummy = new THREE.Object3D()
 
-    let journeyObj = {
-      progress: 0,
-      lineLength: 0,
-      dx: 0,           // Seberapa banyak garis miring ke kanan
-      targetAlpha: 0,
-      targetScale: 0,
-      cameraSway: 0,   // Posisi kamera (sway geser)
-      cameraZoom: 1,
-      ready: false
-    }
+    // BORN Core
+    const coreMat = new THREE.MeshPhongMaterial({
+      color: 0xffffff, emissive: 0x00aaff, emissiveIntensity: 0.5,
+      transparent: true, opacity: 0,
+    })
+    const core = new THREE.Mesh(new THREE.SphereGeometry(0.5, 24, 24), coreMat)
+    core.position.set(0, 0, 0)
+    scene.add(core)
 
-    // Target Node — miring ke kanan atas
-    const TARGET_X = W * 0.65
-    const TARGET_Y = H * 0.2
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: 0x00aaff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending,
+    })
+    const glow = new THREE.Mesh(new THREE.SphereGeometry(0.8, 24, 24), glowMat)
+    glow.position.set(0, 0, 0)
+    scene.add(glow)
 
-    let reqId: number
-    const startTime = Date.now()
+    // Graph Nodes (di sekitar pusat, height rata-rata 0)
+    const gNodes = NODES.map(d => {
+      const m = new THREE.Mesh(new THREE.SphereGeometry(0.5, 20, 20),
+        new THREE.MeshPhongMaterial({ color: d.color, emissive: 0x0288d1,
+          emissiveIntensity: 0.2, transparent: true, opacity: 0 }))
+      m.position.set(d.x, d.y, d.z)
+      m.userData = d
+      scene.add(m)
 
-    const handleResize = () => {
-      W = canvas.width = window.innerWidth
-      H = canvas.height = window.innerHeight
-      floorY = H * 0.6
-      CENTER_X = W / 2
-      mainDrop.x = CENTER_X
-      bornObj.x = CENTER_X
-    }
-    window.addEventListener('resize', handleResize)
+      const g = new THREE.Mesh(new THREE.SphereGeometry(0.8, 20, 20),
+        new THREE.MeshBasicMaterial({ color: 0x00aaff, transparent: true, opacity: 0,
+          blending: THREE.AdditiveBlending }))
+      g.position.copy(m.position)
+      scene.add(g)
+      return { mesh: m, glow: g, data: d }
+    })
 
-    function drawDrop(x: number, y: number, r: number, alpha: number, scaleX = 1, scaleY = 1) {
-      if (alpha <= 0 || r <= 0) return
-      ctx!.save()
-      ctx!.globalAlpha = Math.min(1, alpha)
-      ctx!.translate(x, y)
-      ctx!.scale(scaleX, scaleY)
+    // Graph Edges
+    const gEdges = EDGES.map(e => {
+      const f = NODES.find(n => n.id === e.from), t = NODES.find(n => n.id === e.to)
+      if (!f || !t) return null
+      const s = new THREE.Vector3(f.x, f.y, f.z), en = new THREE.Vector3(t.x, t.y, t.z)
+      const d = new THREE.Vector3().subVectors(en, s), len = d.length()
+      d.normalize()
+      const mid = new THREE.Vector3().addVectors(s, en).multiplyScalar(0.5)
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, len, 6, 1),
+        new THREE.MeshPhongMaterial({ color: 0x4fc3f7, emissive: 0x0288d1,
+          emissiveIntensity: 0.3, transparent: true, opacity: 0 }))
+      m.position.copy(mid)
+      m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d)
+      scene.add(m)
+      return m
+    }).filter(Boolean)
 
-      ctx!.beginPath()
-      ctx!.moveTo(-r * 0.55, -r * 0.25)
-      ctx!.quadraticCurveTo(0, -r * 2.4, r * 0.55, -r * 0.25)
-      ctx!.quadraticCurveTo(0, r * 0.6, -r * 0.55, -r * 0.25)
-      ctx!.fillStyle = BLUE
-      ctx!.fill()
+    // GSAP Timeline
+    const tl = gsap.timeline()
 
-      ctx!.beginPath()
-      ctx!.arc(0, 0, r, 0, Math.PI * 2)
-      ctx!.fillStyle = BLUE
-      ctx!.fill()
-
-      const g = ctx!.createRadialGradient(-r * 0.25, -r * 0.25, r * 0.05, 0, 0, r)
-      g.addColorStop(0, 'rgba(255,255,255,0.45)')
-      g.addColorStop(1, 'rgba(2,136,209,0.0)')
-      ctx!.beginPath()
-      ctx!.arc(0, 0, r, 0, Math.PI * 2)
-      ctx!.fillStyle = g
-      ctx!.fill()
-
-      ctx!.restore()
-    }
-
-    function drawRipple(rp: any) {
-      if (rp.alpha <= 0) return
-      ctx!.save()
-      ctx!.globalAlpha = rp.alpha * 0.7
-      ctx!.strokeStyle = BLUE
-      ctx!.lineWidth = 1.5
-      ctx!.beginPath()
-      ctx!.ellipse(rp.x, rp.y, rp.rx, rp.ry, 0, 0, Math.PI * 2)
-      ctx!.stroke()
-      ctx!.restore()
-    }
-
-    function drawParticle(p: any) {
-      if (p.alpha <= 0 || p.r <= 0) return
-      ctx!.save()
-      ctx!.globalAlpha = p.alpha
-      ctx!.fillStyle = BLUE_LIGHT
-      ctx!.beginPath()
-      ctx!.arc(p.x, p.y, p.r, 0, Math.PI * 2)
-      ctx!.fill()
-      ctx!.restore()
-    }
-
-    function drawScene(time: number) {
-      ctx!.save()
-      
-      const progress = journeyObj.progress
-      
-      const startX = bornObj.x
-      const startY = bornObj.y
-      
-      const endX = startX + journeyObj.dx
-      const endY = startY - journeyObj.lineLength
-      
-      const camX = endX + journeyObj.cameraSway
-      const camY = endY
-      const camZoom = journeyObj.cameraZoom
-
-      // Kamera translate
-      ctx!.translate(W / 2, H / 2)
-      ctx!.scale(camZoom, camZoom)
-      ctx!.translate(-camX, -camY)
-
-      // Grid referensi
-      ctx!.strokeStyle = 'rgba(79,195,247,0.07)'
-      ctx!.lineWidth = 1
-      for (let gx = -500; gx < 1500; gx += 80) {
-        ctx!.beginPath()
-        ctx!.moveTo(gx, -500)
-        ctx!.lineTo(gx, 500)
-        ctx!.stroke()
+    // ACT 1: Air jatuh
+    tl.to(drop.position, { y: 0, duration: 1.2, ease: 'power2.in',
+      onUpdate: () => {
+        const p = 1 - (drop.position.y / 8)
+        drop.scale.set(1 - p * 0.3, 1 + p * 0.6, 1 - p * 0.3)
       }
-      for (let gy = -500; gy < 500; gy += 80) {
-        ctx!.beginPath()
-        ctx!.moveTo(-500, gy)
-        ctx!.lineTo(1500, gy)
-        ctx!.stroke()
-      }
+    })
 
-      // ===== NODE BORN (Tengah) =====
-      if (bornObj.alpha > 0) {
-        ctx!.save()
-        ctx!.globalAlpha = bornObj.alpha
-        
-        ctx!.beginPath()
-        ctx!.arc(startX, startY, bornObj.r, 0, Math.PI * 2)
-        ctx!.fillStyle = '#ffffff'
-        ctx!.fill()
+    // Splash
+    tl.to(drop.scale, { x: 3, y: 0.05, z: 3, duration: 0.2 }, 'splash')
+    tl.to(dropMat, { opacity: 0, duration: 0.15 }, 'splash')
+    tl.to(ring.scale, { x: 5, z: 5, duration: 0.6 }, 'splash')
+    tl.to(ringMat, { opacity: 0.5, duration: 0.3 }, 'splash')
+    tl.to(ringMat, { opacity: 0, duration: 0.4 }, 'splash+=0.3')
+    splashMesh.material.opacity = 1
 
-        const pulse = Math.abs(Math.sin(time * 3))
-        const glowR = bornObj.r * 2 + (pulse * bornObj.pulseAmp)
-        const glowAlpha = bornObj.glow * (0.4 + pulse * 0.3)
-        
-        ctx!.globalAlpha = glowAlpha
-        ctx!.beginPath()
-        ctx!.arc(startX, startY, glowR, 0, Math.PI * 2)
-        ctx!.fillStyle = '#00aaff'
-        ctx!.fill()
+    let splashT = 0, splashOn = false
+    tl.call(() => { splashOn = true; splashT = 0 })
 
-        if (bornObj.textAlpha > 0) {
-          ctx!.globalAlpha = bornObj.textAlpha
-          ctx!.font = '600 24px sans-serif'
-          ctx!.fillStyle = '#ffffff'
-          ctx!.textAlign = 'center'
-          ctx!.letterSpacing = '8px'
-          ctx!.fillText('BORN', startX, startY + 60)
-        }
-        ctx!.restore()
-      }
+    // Dark pause
+    tl.to({}, { duration: 1.5 })
 
-      // ===== GARIS JOURNEY =====
-      if (phase === 'journey') {
-        ctx!.globalAlpha = 0.9
-        ctx!.strokeStyle = '#4fc3f7'
-        ctx!.lineWidth = 3
-        ctx!.setLineDash([10, 6])
-        ctx!.beginPath()
-        ctx!.moveTo(startX, startY)
-        ctx!.lineTo(endX, endY)
-        ctx!.stroke()
-        ctx!.setLineDash([])
-        
-        ctx!.strokeStyle = 'rgba(0,170,255,0.3)'
-        ctx!.lineWidth = 8
-        ctx!.beginPath()
-        ctx!.moveTo(startX, startY)
-        ctx!.lineTo(endX, endY)
-        ctx!.stroke()
+    // BORN muncul
+    tl.to(coreMat, { opacity: 1, duration: 1 })
+    tl.to(glowMat, { opacity: 0.5, duration: 0.8 }, '-=0.3')
 
-        // Spark
-        ctx!.beginPath()
-        ctx!.arc(endX, endY, 7, 0, Math.PI * 2)
-        ctx!.fillStyle = '#ffffff'
-        ctx!.fill()
+    // Kedip
+    tl.to(glowMat, { opacity: 0.8, duration: 0.4 })
+    tl.to(glowMat, { opacity: 0.3, duration: 0.4 })
+    tl.to(glowMat, { opacity: 0.7, duration: 0.4 })
+    tl.to(glowMat, { opacity: 0.4, duration: 0.4 })
 
-        const sparkGlow = ctx!.createRadialGradient(endX, endY, 0, endX, endY, 35)
-        sparkGlow.addColorStop(0, 'rgba(255,255,255,0.9)')
-        sparkGlow.addColorStop(1, 'rgba(0,170,255,0)')
-        ctx!.beginPath()
-        ctx!.arc(endX, endY, 35, 0, Math.PI * 2)
-        ctx!.fillStyle = sparkGlow
-        ctx!.fill()
+    // Zoom out kamera tetap lurus
+    tl.to(camera.position, { z: 18, duration: 2, ease: 'power2.inOut' })
 
-        // Target Node
-        if (journeyObj.targetAlpha > 0) {
-          ctx!.save()
-          ctx!.globalAlpha = journeyObj.targetAlpha
-          
-          ctx!.translate(TARGET_X, TARGET_Y)
-          ctx!.scale(journeyObj.targetScale, journeyObj.targetScale)
-          
-          ctx!.strokeStyle = 'rgba(79,195,247,0.5)'
-          ctx!.lineWidth = 3
-          ctx!.beginPath()
-          ctx!.arc(0, 0, 100, 0, Math.PI * 2)
-          ctx!.stroke()
-          
-          ctx!.strokeStyle = 'rgba(255,255,255,0.4)'
-          ctx!.lineWidth = 2
-          ctx!.beginPath()
-          ctx!.arc(0, 0, 60, 0, Math.PI * 2)
-          ctx!.stroke()
-          
-          ctx!.beginPath()
-          ctx!.arc(0, 0, 25, 0, Math.PI * 2)
-          ctx!.fillStyle = 'rgba(255,255,255,0.9)'
-          ctx!.fill()
-          
-          const bigGlow = ctx!.createRadialGradient(0, 0, 0, 0, 0, 150)
-          bigGlow.addColorStop(0, 'rgba(0,170,255,0.4)')
-          bigGlow.addColorStop(1, 'rgba(0,170,255,0)')
-          ctx!.beginPath()
-          ctx!.arc(0, 0, 150, 0, Math.PI * 2)
-          ctx!.fillStyle = bigGlow
-          ctx!.fill()
-          
-          ctx!.restore()
+    // Node 39 + edge
+    const n1 = gNodes[0], e1 = gEdges[0]
+    tl.to(n1.mesh.material, { opacity: 1, duration: 0.8 })
+    tl.to(n1.glow.material, { opacity: 0.3, duration: 0.4 }, '-=0.4')
+    tl.to(e1.material, { opacity: 0.6, duration: 1 }, '-=0.3')
+
+    // Node 30
+    const n2 = gNodes[1]
+    tl.to(n2.mesh.material, { opacity: 1, duration: 0.8 }, '-=0.5')
+    tl.to(n2.glow.material, { opacity: 0.3, duration: 0.4 }, '-=0.4')
+
+    // Kamera rotasi pelan di sumbu Y (tetap dari tengah)
+    tl.to(camera.position, { x: 3, duration: 3, ease: 'power1.inOut' }, '-=1')
+
+    // Node 58 + edge
+    const n3 = gNodes[2], e2 = gEdges[1]
+    tl.to(e2.material, { opacity: 0.6, duration: 1 })
+    tl.to(n3.mesh.material, { opacity: 1, duration: 0.8 }, '-=0.5')
+    tl.to(n3.glow.material, { opacity: 0.3, duration: 0.4 }, '-=0.4')
+
+    tl.to(camera.position, { x: -2, z: 20, duration: 3, ease: 'power1.inOut' }, '-=1')
+
+    // Node 61 & 62 bareng
+    const n4 = gNodes[3], n5 = gNodes[4], e3 = gEdges[2], e4 = gEdges[3]
+    tl.to([e3.material, e4.material], { opacity: 0.6, duration: 1 })
+    tl.to([n4.mesh.material, n5.mesh.material], { opacity: 1, duration: 0.8 }, '-=0.5')
+    tl.to([n4.glow.material, n5.glow.material], { opacity: 0.3, duration: 0.4 }, '-=0.4')
+
+    // Final
+    tl.to(camera.position, { x: 0, z: 24, duration: 4, ease: 'power2.inOut' })
+
+    // ── Render ──
+    const clock = new THREE.Clock()
+    function animate() {
+      reqId = requestAnimationFrame(animate)
+      const t = clock.getElapsedTime()
+      const dt = clock.getDelta()
+
+      camera.lookAt(0, 0, 0)
+
+      // Splash particles
+      if (splashOn) {
+        splashT += 0.016
+        if (splashT < 1.2) {
+          for (let i = 0; i < SPLASH_COUNT; i++) {
+            const v = splashVel[i]
+            dummy.position.set(v.vx * splashT, (v.vy * splashT) - (0.5 * 12 * splashT * splashT), v.vz * splashT)
+            const s = Math.max(0, v.sc * (1 - splashT / 1.2))
+            dummy.scale.set(s, s, s)
+            dummy.updateMatrix()
+            splashMesh.setMatrixAt(i, dummy.matrix)
+          }
+          splashMesh.instanceMatrix.needsUpdate = true
+          splashMesh.material.opacity = Math.max(0, 1 - splashT * 1.2)
+        } else {
+          splashOn = false
+          splashMesh.material.opacity = 0
         }
       }
 
-      ctx!.restore()
-    }
+      // Kedip BORN
+      if (coreMat.opacity > 0.5) glowMat.opacity = 0.3 + Math.abs(Math.sin(t * 2.5)) * 0.4
 
-    function triggerSplash() {
-      phase = 'impact'
-
-      for (let i = 0; i < 4; i++) {
-        ripples.push({
-          x: CENTER_X, y: floorY,
-          rx: 6 + i * 4, ry: 2.5 + i,
-          vx: 5 + i * 5, vy: 1.8 + i * 0.6,
-          alpha: 0.9 - i * 0.15
-        })
-      }
-
-      for (let i = 0; i < 28; i++) {
-        const angle = (Math.PI * 2 * i / 28) - Math.PI / 2
-        const speed = 2 + Math.random() * 5
-        splashParts.push({
-          x:  CENTER_X + Math.cos(angle) * 6,
-          y:  floorY,
-          vx: Math.cos(angle) * speed,
-          vy: Math.sin(angle) * speed - 5 - Math.random() * 4,
-          r:  1.5 + Math.random() * 4,
-          alpha: 0.9
-        })
-      }
-
-      for (let i = 0; i < 6; i++) {
-        const ang = -Math.PI / 2 + (i - 2.5) * 0.38
-        miniDrops.push({
-          x:     CENTER_X + Math.cos(ang) * 10,
-          y:     floorY,
-          vx:    Math.cos(ang) * (1.5 + Math.random() * 2.5),
-          vy:    -6 - Math.random() * 4,
-          r:     3 + Math.random() * 4,
-          alpha: 0.9
-        })
-      }
-
-      gsap.to(mainDrop, { alpha: 0, duration: 0.3, ease: 'power2.in' })
-
-      setTimeout(() => {
-        phase = 'darkness'
-        setTimeout(() => {
-          phase = 'born'
-          gsap.to(bornObj, {
-            alpha: 1, glow: 1, r: 10,
-            duration: 1.5, ease: 'power2.out'
-          })
-          gsap.to(bornObj, {
-            textAlpha: 1,
-            duration: 1.5, delay: 0.5, ease: 'power2.out'
-          })
-
-          setTimeout(() => {
-            phase = 'journey'
-            
-            const tl = gsap.timeline()
-            
-            tl.to(journeyObj, {
-              dx: TARGET_X - bornObj.x,
-              lineLength: bornObj.y - TARGET_Y,
-              cameraSway: 200,
-              cameraZoom: 0.7,
-              duration: 4.5,
-              ease: 'power2.inOut'
-            })
-            
-            tl.to(journeyObj, {
-              targetAlpha: 1,
-              targetScale: 1,
-              duration: 1.5,
-              ease: 'elastic.out(1, 0.4)'
-            })
-            
-            tl.to(journeyObj, {
-              cameraSway: 180,
-              duration: 1,
-              ease: 'power2.out'
-            })
-
-          }, 3000)
-        }, 2000)
-      }, 1500)
-    }
-
-    function startAnim() {
-      ripples = []
-      splashParts = []
-      miniDrops = []
-      mainDrop = { x: CENTER_X, y: -40, r: 16, alpha: 0 }
-      bornObj = { x: CENTER_X, y: floorY, r: 0, alpha: 0, glow: 0, textAlpha: 0, zoom: 1, pulseAmp: 4 }
-      journeyObj = { progress: 0, lineLength: 0, dx: 0, targetAlpha: 0, targetScale: 0, cameraSway: 0, cameraZoom: 1, ready: false }
-      phase = 'falling'
-
-      gsap.to(mainDrop, { alpha: 1, duration: 0.3 })
-      gsap.to(mainDrop, {
-        y: floorY - mainDrop.r * 0.5,
-        duration: 1.3,
-        ease: 'power2.in',
-        onComplete: triggerSplash
+      // Kedip node
+      gNodes.forEach(s => {
+        if (s.mesh.material.opacity > 0.5)
+          s.glow.material.opacity = 0.15 + Math.abs(Math.sin(t * 2 + s.data.id)) * 0.25
       })
+
+      renderer.render(scene, camera)
     }
+    let reqId = requestAnimationFrame(animate)
 
-    function loop() {
-      reqId = requestAnimationFrame(loop)
-      ctx!.clearRect(0, 0, W, H)
-      
-      const currentTime = (Date.now() - startTime) / 1000
-
-      ripples.forEach(rp => {
-        rp.rx += rp.vx
-        rp.ry += rp.vy
-        rp.alpha -= 0.010
-        drawRipple(rp)
-      })
-      ripples = ripples.filter(r => r.alpha > 0)
-
-      splashParts.forEach(p => {
-        p.x += p.vx
-        p.y += p.vy
-        p.vy += 0.22
-        p.alpha -= 0.020
-        p.r *= 0.985
-        drawParticle(p)
-      })
-      splashParts = splashParts.filter(p => p.alpha > 0)
-
-      miniDrops.forEach(d => {
-        d.x += d.vx
-        d.y += d.vy
-        d.vy += 0.20
-        if (d.y > floorY) d.alpha -= 0.06
-        d.r *= 0.990
-        drawDrop(d.x, d.y, d.r, d.alpha)
-      })
-      miniDrops = miniDrops.filter(d => d.alpha > 0)
-
-      if (phase === 'falling' || phase === 'impact') {
-        const fallProgress = Math.max(0, (mainDrop.y + 40) / (floorY + 40))
-        const stretchY = 1 + fallProgress * 0.35
-        const squishX = phase === 'impact' ? 0.6 : 1
-        const squishY = phase === 'impact' ? 0.55 : stretchY
-        drawDrop(mainDrop.x, mainDrop.y, mainDrop.r, mainDrop.alpha, squishX, squishY)
-      }
-
-      if (phase === 'born' || phase === 'journey') {
-        drawScene(currentTime)
-      }
+    const onResize = () => {
+      camera.aspect = window.innerWidth / window.innerHeight
+      camera.updateProjectionMatrix()
+      renderer.setSize(window.innerWidth, window.innerHeight)
     }
-
-    loop()
-    const startTimer = setTimeout(startAnim, 500)
+    window.addEventListener('resize', onResize)
 
     return () => {
-      clearTimeout(startTimer)
       cancelAnimationFrame(reqId)
-      window.removeEventListener('resize', handleResize)
+      window.removeEventListener('resize', onResize)
+      if (containerRef.current) containerRef.current.innerHTML = ''
     }
   }, [])
 
   return (
-    <div className="w-full h-screen bg-[#0b1a2e] relative overflow-hidden">
-      <canvas ref={canvasRef} className="block w-full h-full" />
+    <div className="w-full h-screen bg-[#0b1a2e] overflow-hidden relative">
+      <div ref={containerRef} className="w-full h-full" />
+      <div className="absolute bottom-12 left-1/2 -translate-x-1/2 text-center pointer-events-none z-10">
+        <h1 className="text-2xl font-bold text-white/80 uppercase tracking-[0.3em]">Arwright</h1>
+        <p className="text-sm text-[#4fc3f7]/60 tracking-[0.2em] mt-1">The Journey of Connected Thoughts</p>
+      </div>
     </div>
   )
 }

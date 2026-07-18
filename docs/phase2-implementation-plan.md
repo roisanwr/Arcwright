@@ -2,7 +2,7 @@
 
 > **Status:** In Progress  
 > **Goal:** Build all 8 LangGraph agents + Story Director orchestrator  
-> **RAG:** ✅ 9,270 chunks dari 26 buku sudah di ChromaDB (`forge/output/chroma_db/`)  
+> **RAG:** ✅ 9,270 chunks dari 26 buku sudah di Qdrant (`forge/output/qdrant_storage/`)  
 > **Deadline:** 31 Juli 2026
 
 ---
@@ -22,7 +22,7 @@ Arcwright/
 │   ├── state.py              ← ArcwrightState TypedDict
 │   ├── story_director.py     ← Supervisor routing node
 │   ├── story_miner.py        ← Conversational interviewer
-│   ├── rag_librarian.py      ← ChromaDB retriever agent
+│   ├── rag_librarian.py      ← Qdrant retriever agent
 │   ├── web_researcher.py     ← Tavily web search agent
 │   ├── validator.py          ← Quality gate + debate logic
 │   ├── deep_dive.py          ← Multi-perspective analyst
@@ -61,12 +61,12 @@ Arcwright/
 
 **Todo List:**
 1. Buat `requirements.txt` dengan deps: `langgraph>=0.4`, `langchain>=0.3`, `langchain-chroma`, `langchain-community`, `langchain-openai`, `tavily-python`, `python-dotenv`, `sentence-transformers`
-2. Buat `config/settings.py` — semua config (LLM model, ChromaDB path, API keys via env)
+2. Buat `config/settings.py` — semua config (LLM model, Qdrant path, API keys via env)
 3. Buat semua direktori + `__init__.py` files
 4. Buat `.env.example` untuk dokumentasi env vars yang dibutuhkan
 
 **Relevant Context:**
-- ChromaDB path: `forge/output/chroma_db/`
+- Qdrant path: `forge/output/qdrant_storage/`
 - Collection name: `storytelling_books`
 - Embedding model: `BAAI/bge-m3` (harus sama dengan yang dipakai saat indexing)
 
@@ -99,17 +99,17 @@ Arcwright/
 ### Task 2.3 — RAG Librarian Agent (`agents/rag_librarian.py`)
 **Status:** `[ ] pending`
 
-**Intent:** Koneksikan ke ChromaDB Forge yang sudah ada, buat sebagai LangChain retriever tool yang bisa di-query oleh agent.
+**Intent:** Koneksikan ke Qdrant Forge yang sudah ada, buat sebagai LangChain retriever tool yang bisa di-query oleh agent.
 
 **Expected Outcomes:**
-- Agent bisa query ChromaDB dengan BGE-M3 embeddings (SAMA dengan yang dipakai saat indexing)
+- Agent bisa query Qdrant dengan BGE-M3 embeddings (SAMA dengan yang dipakai saat indexing)
 - Hasil retrieval disimpan ke `state["rag_context"]` dengan source attribution
 - MMR search untuk diversity (k=5, fetch_k=20)
 
 **Todo List:**
-1. Load ChromaDB dari `forge/output/chroma_db/` dengan `chromadb.PersistentClient`
+1. Load Qdrant dari `forge/output/qdrant_storage/` dengan `qdrant.PersistentClient`
 2. Inisialisasi `HuggingFaceEmbeddings(model_name="BAAI/bge-m3")` — **wajib sama persis dengan forge**
-3. Buat `Chroma` LangChain wrapper dengan collection `storytelling_books`
+3. Buat `Qdrant` LangChain wrapper dengan collection `storytelling_books`
 4. Buat `create_retriever_tool` dengan deskripsi yang jelas
 5. Buat `create_react_agent` dengan system prompt RAG Librarian
 6. Buat wrapper node function `rag_librarian_node(state) -> dict`
@@ -379,7 +379,7 @@ langchain-chroma>=0.2.0
 langchain-openai>=0.2.0
 langchain-huggingface>=0.1.0
 sentence-transformers>=3.0.0
-chromadb>=0.6.0
+qdrant>=0.6.0
 tavily-python>=0.3.0
 python-dotenv>=1.0.0
 tiktoken>=0.7.0
@@ -424,7 +424,7 @@ LANGCHAIN_PROJECT=arcwright
 
 ## Context for Next Tasks
 
-- ChromaDB path (absolute): `{PROJECT_ROOT}/forge/output/chroma_db/`
+- Qdrant path (absolute): `{PROJECT_ROOT}/forge/output/qdrant_storage/`
 - Embedding model: `BAAI/bge-m3` (wajib konsisten dengan forge)
 - Collection: `storytelling_books`
 - Total chunks: 9,270 dari 26 buku

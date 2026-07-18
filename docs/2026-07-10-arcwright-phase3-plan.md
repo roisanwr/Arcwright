@@ -74,7 +74,7 @@ def safe_agent_call(agent_fn, state, max_retries=2):
 **Task breakdown:**
 - [ ] 3.1a Buat `safe_agent_call()` decorator/wrapper di `graph/pipeline.py`
 - [ ] 3.1b Apply ke semua 8 agent nodes
-- [ ] 3.1c Test: matiin ChromaDB → RAG Librarian gagal → pipeline lanjut tanpa RAG
+- [ ] 3.1c Test: matiin Qdrant → RAG Librarian gagal → pipeline lanjut tanpa RAG
 - [ ] 3.1d Test: matiin internet → Web Researcher gagal → pipeline lanjut
 - [ ] 3.1e Test: kasih state kosong → agent return partial → director skip ke phase next
 

@@ -147,7 +147,8 @@ LANGCHAIN_API_KEY    = os.getenv("LANGCHAIN_API_KEY", "")
 LANGCHAIN_PROJECT    = os.getenv("LANGCHAIN_PROJECT", "arcwright")
 
 # ── Pipeline Tuning ───────────────────────────────────────────────────────────
-MIN_STORY_FRAGMENTS    = 2
+MIN_STORY_FRAGMENTS    = 3          # Jumlah fragment berkualitas minimum sebelum lanjut ke enriching
+FRAGMENT_QUALITY_THRESHOLD = 6     # Score minimum (0-10) untuk dihitung sebagai fragment berkualitas
 VALIDATOR_PASS_THRESHOLD = 35
 MAX_DEBATE_ROUNDS      = 3
 SCRIPT_SELF_REFINE_ROUNDS = 1

@@ -19,9 +19,9 @@ related:
 
 # ⚙️ Arcwright Technical Architecture
 
-> **System:** Storytelling AI Multi-Agent on LangGraph + ChromaDB RAG
+> **System:** Storytelling AI Multi-Agent on LangGraph + Qdrant RAG
 > **Version:** 1.0
-> **Stack:** Python 3.12, LangGraph, ChromaDB, BGE-M3
+> **Stack:** Python 3.12, LangGraph, Qdrant, BGE-M3
 > **Connects to:** [[2026-07-10-arcwright-pla]], [[2026-07-10-arcwright-prd]], [[Arcwright forge/]]
 
 ---
@@ -63,7 +63,7 @@ related:
                           ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                      ARCRIGHT FORGE (RAG)                        │
-│  forge/output/chroma_db/  ← ChromaDB PersistentClient           │
+│  forge/output/qdrant_storage/  ← Qdrant PersistentClient           │
 │  forge/data/extracted/    ← Extracted markdown                   │
 │  forge/arcwright/         ← Python package (extract, chunk,      │
 │                              embed, pipeline)                    │
@@ -249,14 +249,14 @@ def validator_debate_routing(state: ArcwrightState) -> str:
 
 ```python
 from langgraph.prebuilt import create_react_agent
-from langchain_chroma import Chroma
+from langchain_chroma import Qdrant
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain.tools.retriever import create_retriever_tool
-import chromadb
+import qdrant
 
-# Connect to Arcwright forge ChromaDB
-chroma_client = chromadb.PersistentClient(
-    path="/home/rois/Arcwright/forge/output/chroma_db"
+# Connect to Arcwright forge Qdrant
+chroma_client = qdrant.PersistentClient(
+    path="/home/rois/Arcwright/forge/output/qdrant_storage"
 )
 
 # Use BGE-M3 (same model as forge)
@@ -266,7 +266,7 @@ embeddings = HuggingFaceEmbeddings(
     encode_kwargs={"normalize_embeddings": True}
 )
 
-vector_store = Chroma(
+vector_store = Qdrant(
     client=chroma_client,
     embedding_function=embeddings,
     collection_name="storytelling_books"  # Or multi-collection
@@ -418,12 +418,12 @@ AGENT COMMUNICATION BOARD:
 ┌──────────────────────────────────────────────────────────────┐
 │                     ARCRIGHT FORGE                            │
 │                                                               │
-│  forge/output/chroma_db/                                      │
-│  ├── chroma.sqlite3           ← ChromaDB persistence          │
+│  forge/output/qdrant_storage/                                      │
+│  ├── chroma.sqlite3           ← Qdrant persistence          │
 │  └── ...                     ← Embedding index files          │
 │                                                               │
-│  Chroma(                                                      │
-│      client=PersistentClient(path="forge/output/chroma_db"),   │
+│  Qdrant(                                                      │
+│      client=PersistentClient(path="forge/output/qdrant_storage"),   │
 │      embedding_function=BGE-M3,                               │
 │      collection_name="storytelling_books"                     │
 │  )                                                            │
@@ -444,7 +444,7 @@ AGENT COMMUNICATION BOARD:
 2. → RAG Librarian receives context with story fragments
 3. → Constructs query: "What Hero's Journey variation fits a story about [theme]?"
 4. → Calls retriever/search_storytelling_knowledge("...")
-5. → ChromaDB returns top-5 chunks with metadata
+5. → Qdrant returns top-5 chunks with metadata
 6. → RAG Librarian formats: "Based on [Book] > [Section]: [technique]"
 7. → Writes to rag_context[] in shared state
 8. → Story Director routes result to Outline Writer
@@ -544,7 +544,7 @@ source venv/bin/activate
 
 # Additional dependencies for LangGraph
 pip install langgraph langgraph-supervisor langchain langchain-community \
-            langchain-chroma sentence-transformers chromadb tiktoken
+            langchain-chroma sentence-transformers qdrant tiktoken
 ```
 
 ### 9.2 Directory Structure (Final)
@@ -569,7 +569,7 @@ pip install langgraph langgraph-supervisor langchain langchain-community \
 │   ├── settings.py          # Model names, paths, API keys
 │   └── prompts.yaml         # Agent system prompts
 ├── forge/                   # EXISTING: RAG pipeline
-│   └── output/chroma_db/    # Vector store
+│   └── output/qdrant_storage/    # Vector store
 ├── main.py                  # NEW: CLI entry point
 ├── tests/                   # NEW: Test suite
 │   ├── test_rag.py          # RAG query tests

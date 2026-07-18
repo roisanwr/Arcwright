@@ -18,13 +18,13 @@
     *   `final_script`: The generated narrative.
     *   `platform_target`: YouTube, TikTok, Podcast, or Blog.
 
-*   **`config/settings.py` & `config/prompts.yaml`**: Centralize API keys, ChromaDB paths (`forge/output/chroma_db`), model selection (`ag/gemini-3.1-pro-low`), and all agent system prompts.
+*   **`config/settings.py` & `config/prompts.yaml`**: Centralize API keys, Qdrant paths (`forge/output/qdrant_storage`), model selection (`ag/gemini-3.1-pro-low`), and all agent system prompts.
 
 ## 2. Agent Implementation Sequence (Prioritized)
 
 ### Priority 0: The Core Knowledge & Extraction Loop
 1.  **RAG Librarian (`agents/rag_librarian.py`)**:
-    *   **Role:** Connects to the existing ChromaDB (9,270 chunks).
+    *   **Role:** Connects to the existing Qdrant (9,270 chunks).
     *   **Function:** Uses MMR (top 5, fetch-k 20) via BGE-M3 to retrieve frameworks. Re-ranks using Layer 8 logic. Writes strictly to `rag_context`.
 2.  **Story Miner (`agents/story_miner.py`)**:
     *   **Role:** The conversational interviewer.
@@ -109,7 +109,7 @@ from pathlib import Path
 
 # Paths
 BASE_DIR = Path(__file__).resolve().parent.parent
-CHROMA_DIR = BASE_DIR / "forge" / "output" / "chroma_db"
+CHROMA_DIR = BASE_DIR / "forge" / "output" / "qdrant_storage"
 
 # LLM Config (9Router via OpenAI wrapper)
 LLM_API_URL = "http://0.0.0.0:20128/v1"
@@ -157,7 +157,7 @@ def get_llm(temperature=0.7):
 ```
 
 ## 6. Development Milestones
-1. **Milestone 1 (T+2 Days):** State schema, Utils, and `RAG Librarian` successfully querying ChromaDB within a test graph.
+1. **Milestone 1 (T+2 Days):** State schema, Utils, and `RAG Librarian` successfully querying Qdrant within a test graph.
 2. **Milestone 2 (T+5 Days):** Core loop working: `Story Miner` ↔ `RAG Librarian` ↔ `Validator` (Debate loop functioning).
 3. **Milestone 3 (T+8 Days):** Parallel nodes working (`Deep Dive`, `Web Researcher`) and merging cleanly back into state.
 4. **Milestone 4 (T+10 Days):** Full pipeline generating scripts (`Outline Writer`, Human-Interrupt, `Script Writer`).

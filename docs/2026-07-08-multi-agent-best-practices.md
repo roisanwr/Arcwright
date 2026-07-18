@@ -492,7 +492,7 @@ class UserContextManager:
     
     def __init__(self, user_id: str, vector_store, structured_store):
         self.user_id = user_id
-        self.vector_store = vector_store      # semantic memory (ChromaDB, Pinecone)
+        self.vector_store = vector_store      # semantic memory (Qdrant, Pinecone)
         self.structured_store = structured_store  # JSON/SQL for facts
     
     def load_session_context(self, current_topic: str) -> dict:

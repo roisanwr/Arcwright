@@ -1,13 +1,15 @@
 """
 Validator Agent — quality gate that scores outlines on 5 criteria.
-Engages in debate with Story Miner when score is below threshold.
+Provides actionable weak_areas and targeted_question to guide Story Miner
+when the outline needs more material from the user.
 """
 import re
 import json
+from datetime import datetime
 from langgraph.prebuilt import create_react_agent
 
 from config import settings
-from agents.state import ArcwrightState, ValidationResult, AgentNote
+from agents.state import ArcwrightState, ValidationResult, AgentNote, ThoughtProcess
 
 
 _SYSTEM_PROMPT = """You are the Story Validator — a quality gatekeeper for narratives.
@@ -22,8 +24,13 @@ You evaluate story outlines on 5 criteria, each scored 0-10 (total max: 50):
 
 Scoring thresholds:
 - ≥35/50: PASS — move forward to user approval
-- 25-34/50: REVISE — provide specific, actionable feedback
-- <25/50: REJECT — explain why it won't resonate
+- 25-34/50: REVISE — the outline structure is okay but needs more specific story material
+- <25/50: REJECT — the story material itself is too thin or generic
+
+When REVISE or REJECT, you MUST:
+1. Identify the SPECIFIC WEAK AREAS (which criteria scored lowest and why)
+2. Identify WHAT STORY MATERIAL is missing (specific sensory details? character reactions? turning point clarity?)
+3. Write a TARGETED QUESTION that the Story Miner can ask the user to get exactly what's missing
 
 ALWAYS output this exact JSON at the end:
 [VALIDATION_RESULT]:
@@ -37,19 +44,19 @@ ALWAYS output this exact JSON at the end:
     "trend_alignment": <0-10>
   },
   "verdict": "PASS" | "REVISE" | "REJECT",
-  "feedback": "<specific, actionable critique — what exactly needs to improve and why>"
-}
-
-When REVISE or REJECT: be constructive. Your goal is to IMPROVE the story, not kill it.
-Point to specific weaknesses with concrete suggestions."""
+  "feedback": "<specific critique — what exactly needs to improve>",
+  "weak_areas": ["<criterion_1>", "<criterion_2>"],
+  "targeted_question": "<ONE specific question to ask the user to get missing material — in Indonesian if the session is Indonesian>",
+  "missing_material": "<what specific story element is missing: sensory detail / character reaction / turning point specifics / stakes / etc>"
+}"""
 
 
 def validator_node(state: ArcwrightState, llm) -> dict:
     """
-    Validator node — scores outline and decides debate routing.
+    Validator node — scores outline and provides actionable critique.
 
-    Reads:  story_outline, story_fragments, web_research, deep_dive_analysis
-    Writes: validation_result, debate_rounds, debate_log, agent_notes
+    Reads:  story_outline, story_fragments, web_research, deep_dive_analysis, rag_results
+    Writes: validation_result, debate_rounds, debate_log, agent_notes, targeted_probe_mode
     """
     agent = create_react_agent(
         model=llm,
@@ -59,13 +66,30 @@ def validator_node(state: ArcwrightState, llm) -> dict:
 
     outline = state.get("story_outline")
     if not outline:
-        # Nothing to validate yet
         return {}
 
     platform = state.get("user_profile", {}).get("platform_target", "general")
     fragments = state.get("story_fragments", [])
     web = state.get("web_research", [])
     trends = web[0].get("trends", []) if web else []
+    deep_dive = state.get("deep_dive_analysis", {})
+
+    # Get RAG-informed quality context
+    rag_results = state.get("rag_results", [])
+    enriching_rag = next((r for r in reversed(rag_results) if r.get("query_purpose") == "enriching"), None)
+    rag_framework = enriching_rag.get("synthesis", "") if enriching_rag else ""
+
+    # Fragment quality summary
+    quality_fragments = [f for f in fragments if f.get("quality_score", 0) >= settings.FRAGMENT_QUALITY_THRESHOLD]
+
+    thought = ThoughtProcess(
+        agent="validator",
+        timestamp=datetime.now().isoformat(),
+        thought=f"Scoring outline '{outline.get('title', '')}'. "
+                f"{len(quality_fragments)}/{len(fragments)} quality fragments. "
+                f"Debate round: {state.get('debate_rounds', 0)}/{settings.MAX_DEBATE_ROUNDS}.",
+        data={"outline_title": outline.get("title", ""), "fragment_count": len(fragments)}
+    )
 
     query = f"""Please evaluate this story outline:
 
@@ -80,14 +104,24 @@ Punchline: {outline.get("punchline", "")}
 Platform: {outline.get("platform", platform)}
 Duration: {outline.get("estimated_duration", "")}
 
-SOURCE MATERIAL:
-{chr(10).join(f"- {f['text']}" for f in fragments[:5])}
+SOURCE MATERIAL ({len(quality_fragments)} quality fragments out of {len(fragments)} total):
+{chr(10).join(f"- [Q:{f.get('quality_score',0)}/10] {f['text']}" for f in fragments[:6])}
 
-CURRENT TRENDS ({platform}): {", ".join(str(t) for t in trends[:5]) if trends else "No trend data available"}
+DEEP DIVE ANALYSIS:
+- Surface: {deep_dive.get("surface", "N/A")}
+- Psychological: {deep_dive.get("psychological", "N/A")}
+- Universal theme: {deep_dive.get("universal", "N/A")}
+- Hidden gold: {deep_dive.get("hidden_gold", "N/A")}
 
-Debate round: {state.get("debate_rounds", 0)}/3
+STORYTELLING FRAMEWORK APPLIED:
+{rag_framework[:600] if rag_framework else "No specific framework applied"}
 
-Score this outline on all 5 criteria and provide your verdict."""
+CURRENT TRENDS ({platform}): {", ".join(str(t) for t in trends[:5]) if trends else "No trend data"}
+
+Debate round: {state.get("debate_rounds", 0)}/{settings.MAX_DEBATE_ROUNDS}
+
+Score this outline rigorously. If REVISE or REJECT, provide a specific targeted_question 
+that Story Miner can ask the user to get exactly what's missing."""
 
     result = agent.invoke({"messages": [{"role": "user", "content": query}]})
 
@@ -107,7 +141,10 @@ Score this outline on all 5 criteria and provide your verdict."""
             "score": validation["score"],
             "verdict": validation.get("verdict", ""),
             "feedback": validation["feedback"],
+            "weak_areas": validation.get("weak_areas", []),
+            "targeted_question": validation.get("targeted_question", ""),
         }],
+        "thought_process": [thought],
     }
 
     if not validation["passed"]:
@@ -115,8 +152,14 @@ Score this outline on all 5 criteria and provide your verdict."""
         updates["agent_notes"] = [AgentNote(
             agent_name="validator",
             note_type="critique",
-            content=f"Score: {validation['score']}/50 — {validation['feedback']}",
+            content=(
+                f"Score: {validation['score']}/50 — {validation['feedback']}\n"
+                f"Weak areas: {', '.join(validation.get('weak_areas', []))}\n"
+                f"Missing: {validation.get('missing_material', '')}"
+            ),
         )]
+        # Signal Story Miner untuk masuk targeted probe mode
+        updates["targeted_probe_mode"] = True
 
     return updates
 
@@ -135,6 +178,8 @@ def _parse_validation(text: str) -> ValidationResult:
                 criteria_scores=data.get("criteria_scores", {}),
                 feedback=data.get("feedback", ""),
                 passed=score >= settings.VALIDATOR_PASS_THRESHOLD,
+                weak_areas=data.get("weak_areas", []),
+                targeted_question=data.get("targeted_question", ""),
             )
         except (json.JSONDecodeError, KeyError, ValueError):
             pass
@@ -147,4 +192,6 @@ def _parse_validation(text: str) -> ValidationResult:
         criteria_scores={},
         feedback=text[:500],
         passed=score >= settings.VALIDATOR_PASS_THRESHOLD,
+        weak_areas=[],
+        targeted_question="",
     )

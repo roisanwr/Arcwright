@@ -5,13 +5,13 @@
 
 ---
 
-## 📊 Project Status (10 Juli 2026)
+## 📊 Project Status (18 Juli 2026)
 
 ```
-▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░  RAG Knowledge Base     (1/29 books processed)
-▓▓▓░░░░░░░░░░░░░░░░  Agent Implementation    (0/8 agents built)
-▓░░░░░░░░░░░░░░░░░░  Frontend/API            (Existing forge extended)
-▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░  Documentation           (9 docs complete)
+▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓  RAG Knowledge Base     (26+ books processed, 9270 chunks)
+▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓  Agent Implementation    (8/8 agents built)
+▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░  Frontend/API            (FastAPI + Web UI working)
+▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓  Documentation           (9 docs complete)
 ```
 
 ---
@@ -22,14 +22,14 @@ Arcwright is a **multi-agent AI system** that helps people discover, develop, an
 
 **How it works:**
 1. 🗣️ A conversational **Story Miner** asks smart questions to uncover hidden stories
-2. 📚 A **RAG Librarian** queries a ChromaDB vector store of 29+ storytelling books
+2. 📚 A **RAG Librarian** queries a Qdrant vector store of 26+ storytelling books
 3. 🌐 A **Web Researcher** finds real-time trending narrative techniques
 4. ✅ A **Validator** scores story quality using 5 criteria
 5. 🔍 A **Deep Dive** agent explores multiple perspectives
 6. 📝 An **Outline Writer** structures the narrative
 7. 🎬 A **Script Writer** generates the final narrative script
 
-**Tech Stack:** Python 3.12, LangGraph (orchestration), ChromaDB (vector store), BGE-M3 (embeddings), FastAPI (backend), React+Vite (frontend)
+**Tech Stack:** Python 3.12, LangGraph (orchestration), Qdrant (vector store), BGE-M3 (embeddings), FastAPI (backend), React+Vite (frontend)
 
 ---
 
@@ -37,7 +37,7 @@ Arcwright is a **multi-agent AI system** that helps people discover, develop, an
 
 ```
 Arcwright/
-├── agents/                   ← 🔜 LangGraph agent definitions (coming soon)
+├── agents/                   ← ✅ LangGraph agent definitions
 │   ├── state.py
 │   ├── story_director.py
 │   ├── story_miner.py
@@ -48,7 +48,7 @@ Arcwright/
 │   ├── outline_writer.py
 │   └── script_writer.py
 │
-├── graph/                    ← 🔜 LangGraph pipeline (coming soon)
+├── graph/                    ← ✅ LangGraph pipeline
 │   ├── pipeline.py
 │   └── edges.py
 │
@@ -61,7 +61,8 @@ Arcwright/
 │   ├── api/                  ← FastAPI backend
 │   ├── frontend/             ← React + Vite frontend
 │   ├── data/                 ← PDF books & extracted markdown
-│   └── output/chroma_db/     ← Vector store (to be populated)
+│   └── output/               ← RAG Pipeline Output
+├── qdrant_storage/           ← ✅ Qdrant Vector store data
 │
 ├── docs/                     ← ✅ Project Documentation (9 files)
 │   ├── 2026-07-10-arcwright-deep-research.md
@@ -74,7 +75,7 @@ Arcwright/
 │   ├── 2026-07-08-agentic-frameworks-research.md
 │   └── RAG list of Book.md
 │
-├── config/                   ← 🔜 Configuration files (coming soon)
+├── config/                   ← ✅ Configuration files
 │
 ├── tests/                    ← 🔜 Test suite (coming soon)
 │
@@ -90,8 +91,9 @@ Arcwright/
 
 - **RAG Pipeline** — `forge/` has full document extraction → chunking → embedding pipeline
 - **Multi-Format Support** — PDF, EPUB, MOBI, AZW3, DOCX, TXT, HTML (v1.1.0)
-- **1 Book Processed** — Robert McKee's *Story* (327 chunks extracted)
-- **8 Agent Roles Designed** — detailed permission tiers, debate protocols, and pipeline flow
+- **26+ Books Processed** — 9,270 chunks extracted and embedded into Qdrant
+- **8 Agent Roles Implemented** — including Story Miner, RAG Librarian, Validator, etc.
+- **FastAPI + SSE** — Backend for real-time streaming to the UI
 - **Deep Research** — validated LangGraph as framework (score 9.6/10)
 - **Webtoon Case Study** — real-world validation: public company uses LangGraph for storytelling AI
 - **PLA + PRD + Tech Arch** — implementation plan, product requirements, and technical specification
@@ -100,28 +102,27 @@ Arcwright/
 
 ## 🔄 What's Next
 
-### Phase 1: Complete RAG (1-2 days)
-- [ ] Batch-process remaining 28 storytelling books through forge pipeline
-- [ ] Verify chunk quality and embedding accuracy
-- [ ] Set up unified ChromaDB collection
+### Phase 1: Complete RAG (✅ Completed)
+- [x] Batch-process remaining 28 storytelling books through forge pipeline
+- [x] Verify chunk quality and embedding accuracy
+- [x] Set up unified Qdrant collection
 
-### Phase 2: Build LangGraph Agents (8-10 days)
-- [ ] RAG Librarian Agent (first — connects to ChromaDB)
-- [ ] Story Miner Agent (conversational interviewer)
-- [ ] Web Researcher Agent (trends search)
-- [ ] Deep Dive Agent (perspective analysis)
-- [ ] Validator Agent (quality gate + debate)
-- [ ] Outline Writer Agent
-- [ ] Script Writer Agent (with self-refine)
-- [ ] Story Director Supervisor (orchestrator)
+### Phase 2: Build LangGraph Agents (✅ Completed)
+- [x] RAG Librarian Agent (first — connects to Qdrant)
+- [x] Story Miner Agent (conversational interviewer)
+- [x] Web Researcher Agent (trends search)
+- [x] Deep Dive Agent (perspective analysis)
+- [x] Validator Agent (quality gate + debate)
+- [x] Outline Writer Agent
+- [x] Script Writer Agent (with self-refine)
+- [x] Story Director Supervisor (orchestrator)
 
-### Phase 3: Polish & Productionize (5-7 days)
-- [ ] Error handling & retry logic
-- [ ] LangSmith observability
-- [ ] CLI interface
-- [ ] Extend FastAPI backend
-- [ ] Extend React frontend
-- [ ] Documentation
+### Phase 3: Polish & Productionize (In Progress)
+- [ ] Fix Debate loop bypassing in Validator
+- [x] CLI interface
+- [x] Extend FastAPI backend
+- [ ] Extend React frontend (currently intro animation only)
+- [ ] Hardening for production
 
 ---
 

@@ -50,7 +50,7 @@ LangGraph models agent workflows as **directed graphs** (`StateGraph`) where nod
 - Custom with `Command` or conditional edges for multi-round validation patterns.
 
 **RAG Integration**
-- Native via LangChain's RAG primitives: `VectorStoreRetriever` wraps any vector DB (Chroma, Pinecone, Weaviate, Qdrant, MongoDB, etc.).
+- Native via LangChain's RAG primitives: `VectorStoreRetriever` wraps any vector DB (Qdrant, Pinecone, Weaviate, Qdrant, MongoDB, etc.).
 - A retriever can be a tool assigned to specific agents.
 - LangChain has 50+ vector store integrations.
 
@@ -111,7 +111,7 @@ CrewAI is a **role-based multi-agent framework** built on the metaphor of a "cre
 - **MCP support**: connect any MCP server as a tool source.
 
 **RAG Integration**
-- `CrewAI Knowledge` subsystem: source documents (text, PDF, CSV, JSON, URL) automatically chunked, embedded, and stored in a vector DB (default: Chroma).
+- `CrewAI Knowledge` subsystem: source documents (text, PDF, CSV, JSON, URL) automatically chunked, embedded, and stored in a vector DB (default: Qdrant).
 - Agents query the knowledge base automatically when relevant.
 - Custom vector store backends supported (e.g., Pinecone via LangChain integration).
 
@@ -178,9 +178,9 @@ AutoGen is a **conversation-pattern-based** multi-agent framework. In v0.4+, the
 
 **Memory and RAG**
 - `MemoryStore` interface with default `ListMemory` (conversation history).
-- `ChromaDBMemory` built-in for vector RAG — query memory on every agent call.
+- `QdrantMemory` built-in for vector RAG — query memory on every agent call.
 - Custom memory: implement `Memory` protocol.
-- AutoGen v0.4 has explicit `Memory and RAG` guide with ChromaDB and custom backends.
+- AutoGen v0.4 has explicit `Memory and RAG` guide with Qdrant and custom backends.
 - State management: `save_state()` / `load_state()` on any team — serialized to JSON for persistence across sessions.
 
 **Agent Communication**
@@ -260,7 +260,7 @@ AgentScope (v0.1.x → v2.0) is a **message-passing multi-agent framework** buil
 
 **RAG Integration**
 - `AgentScope RAG` module: supports LlamaIndex as retrieval backbone.
-- Vector stores: Faiss, Milvus, MongoDB (new), Chroma.
+- Vector stores: Faiss, Milvus, MongoDB (new), Qdrant.
 - `RAGKnowledgeBase` class: load documents → embed → retrieve → inject into agent context.
 - Also supports HuggingFace embeddings.
 
@@ -295,9 +295,9 @@ AgentScope (v0.1.x → v2.0) is a **message-passing multi-agent framework** buil
 | **Peer Agent Communication** | ⭐⭐⭐ Shared state (indirect); `Command` for explicit handoff | ⭐⭐⭐ Task context passing; delegation | ⭐⭐⭐⭐⭐ Native broadcast; all agents see all messages | ⭐⭐⭐⭐⭐ `msghub` publish/subscribe; explicit message routing |
 | **Debate / Validation** | ⭐⭐⭐ Custom via looping edges + conditional | ⭐⭐ Manager review in hierarchical mode | ⭐⭐⭐⭐ `SelectorGroupChat` with Critic agents; custom `selector_func` | ⭐⭐⭐⭐ Native GroupChat debate patterns; used in research |
 | **Built-in Voting** | ❌ None built-in | ❌ None built-in | ❌ None built-in | ⭐⭐⭐ Research-grade voting patterns via `DictDialogAgent` |
-| **RAG Integration** | ⭐⭐⭐⭐⭐ 50+ vector store integrations via LangChain; retriever-as-tool per agent | ⭐⭐⭐⭐ Native `Knowledge` subsystem; Chroma default; custom backends | ⭐⭐⭐⭐ `ChromaDBMemory` built-in; custom `Memory` protocol | ⭐⭐⭐ RAG module; Faiss, Milvus, MongoDB, LlamaIndex |
+| **RAG Integration** | ⭐⭐⭐⭐⭐ 50+ vector store integrations via LangChain; retriever-as-tool per agent | ⭐⭐⭐⭐ Native `Knowledge` subsystem; Qdrant default; custom backends | ⭐⭐⭐⭐ `QdrantMemory` built-in; custom `Memory` protocol | ⭐⭐⭐ RAG module; Faiss, Milvus, MongoDB, LlamaIndex |
 | **Web Search Tools** | ⭐⭐⭐⭐⭐ Tavily, Serper, Brave, Bing, DuckDuckGo (LangChain tools) | ⭐⭐⭐⭐⭐ SerperDev, EXA, Brave, Tavily, Firecrawl (built-in tools) | ⭐⭐⭐⭐ WebSurfer (Playwright); Tavily via tool | ⭐⭐⭐ Bing/Google via service functions |
-| **Memory Across Sessions** | ⭐⭐⭐⭐⭐ First-class: checkpointers (SQLite/Postgres), Stores, thread IDs | ⭐⭐⭐⭐⭐ Built-in long-term (SQLite), entity, user memory (mem0); Knowledge base | ⭐⭐⭐ `save_state()`/`load_state()`; ChromaDB memory; custom Memory protocol | ⭐⭐⭐ `PersistentMemory` (disk); per-agent; no shared cross-session store |
+| **Memory Across Sessions** | ⭐⭐⭐⭐⭐ First-class: checkpointers (SQLite/Postgres), Stores, thread IDs | ⭐⭐⭐⭐⭐ Built-in long-term (SQLite), entity, user memory (mem0); Knowledge base | ⭐⭐⭐ `save_state()`/`load_state()`; Qdrant memory; custom Memory protocol | ⭐⭐⭐ `PersistentMemory` (disk); per-agent; no shared cross-session store |
 | **Structured Output** | ⭐⭐⭐⭐⭐ Pydantic state schema; per-node output validation | ⭐⭐⭐⭐⭐ `output_pydantic` per task; JSON mode | ⭐⭐⭐⭐ Pydantic response model per agent | ⭐⭐⭐ `DictDialogAgent`; custom parsers |
 | **Tool Scoping per Agent** | ⭐⭐⭐⭐⭐ Each agent node has its own tool list | ⭐⭐⭐⭐⭐ Agent-level AND task-level tool assignment | ⭐⭐⭐⭐⭐ Per-agent tool registration | ⭐⭐⭐ Service functions scoped per agent |
 | **Interactive Conversation (Human-in-Loop)** | ⭐⭐⭐⭐⭐ `interrupt()` anywhere in graph; resume with input | ⭐⭐⭐ Task callbacks; human approval at task boundaries | ⭐⭐⭐⭐⭐ `UserProxyAgent`; interrupt mid-conversation | ⭐⭐⭐ `UserAgent`; synchronous input |
@@ -337,7 +337,7 @@ AgentScope (v0.1.x → v2.0) is a **message-passing multi-agent framework** buil
 
 2. **Per-Agent Tool Scoping** — Each agent node is its own compiled `create_react_agent(llm, tools=[...])`. The Web Researcher gets Tavily search; the RAG Librarian gets VectorStoreRetriever; the Script Editor gets file tools; none bleed into each other.
 
-3. **RAG** — LangChain's 50+ vector store integrations (Chroma, Pinecone, Weaviate, Qdrant, MongoDB) are all immediately available. The `RAGLibrarian` agent can be a `create_react_agent` with `VectorStoreRetriever` as its only tool. Embedding models selectable per-retriever.
+3. **RAG** — LangChain's 50+ vector store integrations (Qdrant, Pinecone, Weaviate, Qdrant, MongoDB) are all immediately available. The `RAGLibrarian` agent can be a `create_react_agent` with `VectorStoreRetriever` as its only tool. Embedding models selectable per-retriever.
 
 4. **Session-Persistent Memory** — `thread_id`-based checkpointing with SQLite/PostgreSQL means every story session is automatically persisted. The `Store` gives cross-session long-term memory (story Bible, character sheets, worldbuilding notes) that survive across multiple user sessions.
 

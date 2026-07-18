@@ -31,7 +31,7 @@ related:
 
 1. What are the **latest developments in LangGraph / CrewAI / AutoGen** (mid-2026) that affect our architecture choice?
 2. How do **production storytelling AI systems** handle multi-agent narrative generation?
-3. What are the best patterns for **integrating Arcwright Forge (ChromaDB + BGE-M3 RAG)** with a LangGraph multi-agent system?
+3. What are the best patterns for **integrating Arcwright Forge (Qdrant + BGE-M3 RAG)** with a LangGraph multi-agent system?
 4. How should **agent debate/validation loops** be structured for narrative quality in production?
 5. What **production risks** (hallucination propagation, context drift, latency) must we address?
 
@@ -45,7 +45,7 @@ related:
 
 2. **Hallucination propagation** is THE #1 production risk in multi-agent systems — 68% of production systems run ≤10 steps before human intervention. Our debate/validation loops are the right mitigation.
 
-3. **Arcwright Forge** (our ChromaDB + BGE-M3 RAG pipeline) can be directly integrated as a LangGraph tool via LangChain's Chroma integration — no adapter needed.
+3. **Arcwright Forge** (our Qdrant + BGE-M3 RAG pipeline) can be directly integrated as a LangGraph tool via LangChain's Qdrant integration — no adapter needed.
 
 4. The **framework landscape has shifted**: some teams are returning to vanilla SDK, but for complex creative workflows like ours, LangGraph's graph-based control is still the best fit.
 
@@ -125,29 +125,29 @@ This is **directly analogous** to our system:
 
 ## 3️⃣ Key Finding: Arcwright Forge + LangGraph Integration
 
-**Source:** LangChain docs — Chroma integration + LangGraph Agentic RAG guide
+**Source:** LangChain docs — Qdrant integration + LangGraph Agentic RAG guide
 
 ### Direct Integration Path
 The Arcwright Forge RAG pipeline uses:
-- **ChromaDB** at `forge/output/chroma_db/`
+- **Qdrant** at `forge/output/qdrant_storage/`
 - **BGE-M3 embeddings** (1024-dim)
 - **Semantic chunking** with heading-based boundaries
 
-LangGraph + LangChain natively supports ChromaDB:
+LangGraph + LangChain natively supports Qdrant:
 
 ```python
-import chromadb
-from langchain_chroma import Chroma
+import qdrant
+from langchain_chroma import Qdrant
 from langchain_community.embeddings import HuggingFaceEmbeddings
 
-# Connect to Arcwright's existing ChromaDB
+# Connect to Arcwright's existing Qdrant
 embedding_function = HuggingFaceEmbeddings(
     model_name="BAAI/bge-m3"
 )
 
-vector_store = Chroma(
-    client=chromadb.PersistentClient(
-        path="/home/rois/Arcwright/forge/output/chroma_db"
+vector_store = Qdrant(
+    client=qdrant.PersistentClient(
+        path="/home/rois/Arcwright/forge/output/qdrant_storage"
     ),
     embedding_function=embedding_function,
     collection_name="story_books"
@@ -204,7 +204,7 @@ supervisor = create_supervisor(
 ### What Needs to Be Built
 | Component | Status | Action |
 |-----------|--------|--------|
-| ChromaDB with BGE-M3 embeddings | ✅ Existing (Arcwright forge) | Use as-is, add more books |
+| Qdrant with BGE-M3 embeddings | ✅ Existing (Arcwright forge) | Use as-is, add more books |
 | 29 storytelling books | ⏳ 1/29 processed | Batch-process remaining 28 PDFs |
 | LangGraph agent nodes | ❌ Not built | Build 8 agent nodes |
 | Supervisor orchestrator | ❌ Not built | Build Story Director |
@@ -274,7 +274,7 @@ Since 68% of production systems run ≤10 steps before human intervention:
 | Supervisor Pattern | ✅ Native (langgraph-supervisor) | ✅ Process.hierarchical | ✅ MagenticOne |
 | Tool Scoping | ✅ Per-node | ✅ Agent + Task level | ✅ Per-agent |
 | Debate/Validation | ✅ Custom looping edges | ⭐ Manager review | ✅ SelectorGroupChat |
-| RAG Integration | ✅ 50+ vector stores | ✅ Knowledge subsystem | ✅ ChromaDBMemory |
+| RAG Integration | ✅ 50+ vector stores | ✅ Knowledge subsystem | ✅ QdrantMemory |
 | Session Memory | ✅ Thread checkpointers | ✅ SQLite long-term | ✅ save/load state |
 | Production Readiness | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
 
@@ -294,14 +294,14 @@ Existing Vault Research ──┐
   ├── frameworks.md       └──→ LangGraph 9.6/10 reaffirmed
           │
           ▼
-Arcwright Forge (RAG) ──→ LangGraph create_react_agent + Chroma tool
+Arcwright Forge (RAG) ──→ LangGraph create_react_agent + Qdrant tool
           │
           ▼
     Fresh Hermes Stack Research
       ├── Webtoon LangGraph case study
       ├── Production multi-agent failure modes
       ├── Framework showdown 2026
-      └── ChromaDB + LangGraph integration patterns
+      └── Qdrant + LangGraph integration patterns
           │
           ▼
     FINAL: Unified Architecture (see PLA.md)
@@ -351,7 +351,7 @@ Arcwright Forge (RAG) ──→ LangGraph create_react_agent + Chroma tool
 4. [LangGraph: Agent Orchestration Framework](https://www.langchain.com/langgraph) — LangChain
 5. [LangGraph Supervisor Pattern](https://reference.langchain.com/python/langgraph-supervisor) — LangChain Reference
 6. [LangGraph Agentic RAG Guide](https://docs.langchain.com/oss/python/langgraph/agentic-rag) — LangChain Docs
-7. [Chroma Integration with LangChain](https://docs.langchain.com/oss/python/integrations/vectorstores/chroma) — LangChain Docs
+7. [Qdrant Integration with LangChain](https://docs.langchain.com/oss/python/integrations/vectorstores/chroma) — LangChain Docs
 8. [Subgraphs in LangGraph](https://docs.langchain.com/oss/python/langgraph/use-subgraphs) — LangChain Docs
 9. [2026-07-08-storytelling-ai-agent-roles](.//2026-07-08-storytelling-ai-agent-roles.md) — Existing vault research
 10. [2026-07-08-multi-agent-ai-architecture-patterns](.//2026-07-08-multi-agent-ai-architecture-patterns.md) — Existing vault research

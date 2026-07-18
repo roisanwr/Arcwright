@@ -1316,7 +1316,7 @@ Session Memory (Short-term):       → LangGraph InMemorySaver / checkpointer
   Current conversation context
   Current story being developed
 
-User Memory (Long-term):           → External vector DB (Pinecone, Chroma)
+User Memory (Long-term):           → External vector DB (Pinecone, Qdrant)
   User's past stories               
   User's storytelling preferences
   Platform/audience details

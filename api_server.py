@@ -84,15 +84,18 @@ def _agent_label(node_name: str) -> str:
 
 # ── LangGraph thread ───────────────────────────────────────────────────────────
 
-def _run_graph_thread(session_id: str, message: str, is_new: bool = False):
+def _run_graph_thread(session_id: str, message: str, is_new: bool = False,
+                      user_name: str = "User", language: str = "id", platform: str = "general"):
     """Jalankan LangGraph di background thread, push events via SSE."""
     config = {"configurable": {"thread_id": session_id}}
 
     try:
         if is_new:
             state = make_initial_state(
-                user_name="User", platform="general", session_id=session_id
+                user_name=user_name, platform=platform, session_id=session_id
             )
+            # Simpan language preference ke user_profile
+            state["user_profile"]["preferred_language"] = language
             iterator = graph.stream(state, config, stream_mode="updates")
         else:
             state_info = graph.get_state(config)
@@ -285,15 +288,18 @@ def serve_ui():
 
 
 @app.get("/api/start")
-def start_session():
-    """Mulai sesi baru Arcwright."""
-    # Generate random session ID baru tiap hit endpoint ini
+def start_session(
+    user_name: str = "User",
+    language: str = "id",
+    platform: str = "general",
+):
+    """Mulai sesi baru Arcwright. Terima nama user, bahasa, dan platform."""
     session_id = str(uuid.uuid4())
     # Buat queue SEBELUM thread jalan, biar event gak ilang
     session_queues[session_id] = asyncio.Queue()
     threading.Thread(
         target=_run_graph_thread,
-        args=(session_id, "", True),
+        args=(session_id, "", True, user_name, language, platform),
         daemon=True,
     ).start()
     return {"session_id": session_id}

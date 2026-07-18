@@ -1,20 +1,21 @@
 # Project: Arcwright — Storytelling AI Multi-Agent System
 
 ## Overview
-Multi-agent storytelling AI system powered by LangGraph + ChromaDB RAG.
+Multi-agent storytelling AI system powered by LangGraph + Qdrant RAG.
 Helps people discover and craft compelling stories from everyday life moments.
 
-## Current Status (10 Juli 2026)
-- RAG pipeline: ✅ `forge/` — 1/29 books processed
-- Agents: ❌ Not built yet (8 agent roles designed)
-- Frontend: ✅ Existing forge React+Vite
+## Current Status (18 Juli 2026)
+- RAG pipeline: ✅ `forge/` — 26+ books processed (9,270 chunks)
+- Agents: ✅ All 8 agents built and integrated
+- Frontend: ✅ React+Vite (intro animation) + Web UI (`ui.html`)
+- Backend: ✅ FastAPI + SSE server running
 - Docs: ✅ 9 project documents in `docs/`
-- Progress: Documentation phase complete. Ready for Phase 1 (batch RAG).
+- Progress: Phase 1 & 2 complete. Working on Phase 3 (Polish & Productionize).
 
 ## Tech Stack
 - Python 3.12
 - LangGraph (agent orchestration) — selected via research (9.6/10)
-- ChromaDB (vector database) — existing at forge/output/chroma_db/
+- Qdrant (vector database) — existing at qdrant_storage/
 - BGE-M3 (embeddings) — 1024-dim, local, free
 - Marker-pdf (OCR/extraction)
 - FastAPI (backend)
@@ -49,5 +50,5 @@ Arcwright/
 
 ## Testing
 - Run tests before every commit
-- Verify ChromaDB query results after embedding changes
+- Verify Qdrant query results after embedding changes
 - Test each agent node individually before integration

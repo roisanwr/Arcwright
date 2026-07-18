@@ -2,6 +2,11 @@
 Story Director — supervisor that routes between all agents.
 Controls pipeline flow via current_phase state machine.
 Also contains user_approval_node for human-in-the-loop.
+
+Updated routing logic:
+- RAG bootstrap sebelum Story Miner pertama kali
+- Debate loop tidak di-bypass lagi
+- targeted_probe_mode dihandle dengan benar
 """
 from typing import Literal
 from datetime import datetime
@@ -11,7 +16,7 @@ from config import settings
 from agents.state import ArcwrightState, ThoughtProcess
 
 
-# ── Story Director Routing ─────────────────────────────────────────────────────
+# ── Story Director Node ───────────────────────────────────────────────────────
 
 def story_director_node(state: ArcwrightState, llm=None) -> dict:
     """
@@ -28,53 +33,70 @@ def story_director_node(state: ArcwrightState, llm=None) -> dict:
     validation = state.get("validation_result")
     outline = state.get("story_outline")
     debate_rounds = state.get("debate_rounds", 0)
-    
+
+    # Count quality fragments
+    quality_count = sum(
+        1 for f in fragments
+        if f.get("quality_score", 0) >= settings.FRAGMENT_QUALITY_THRESHOLD
+    )
+
     thought = ThoughtProcess(
         agent="story_director",
         timestamp=datetime.now().isoformat(),
-        thought=f"Evaluating state in phase '{phase}'.",
-        data={"fragments_count": len(fragments)}
+        thought=f"Phase='{phase}'. Fragments: {len(fragments)} total, {quality_count} quality.",
+        data={"phase": phase, "fragment_count": len(fragments), "quality_count": quality_count}
     )
 
+    # ── Mining → Enriching ──────────────────────────────────────────────────
     if phase == "mining":
-        # Extract fragments ready signal from last message if any
-        miner_ready = False
-        if messages:
-            last_msg = messages[-1]
-            if hasattr(last_msg, "content") and "[FRAGMENTS_READY]" in last_msg.content:
-                miner_ready = True
-            elif isinstance(last_msg, dict) and "[FRAGMENTS_READY]" in last_msg.get("content", ""):
-                miner_ready = True
-                
-        if len(fragments) >= settings.MIN_STORY_FRAGMENTS or miner_ready:
-            thought["thought"] += " Sufficient fragments gathered. Transitioning to 'enriching'."
+        miner_ready = _check_fragments_ready(messages)
+        sufficient_quality = quality_count >= settings.MIN_STORY_FRAGMENTS
+
+        if sufficient_quality or miner_ready:
+            thought["thought"] += f" {quality_count} quality fragments. Transitioning to 'enriching'."
             return {"current_phase": "enriching", "thought_process": [thought]}
 
-    # Enriching → Outlining transition (after BOTH parallel agents complete)
-    # Both deep_dive (dict with keys) and web_research (non-empty list) must be ready
-    # Note: web_research might be empty if TAVILY_API_KEY is not set, so we only check if deep_dive is done
+    # ── Enriching → Outlining ───────────────────────────────────────────────
     if phase == "enriching" and deep_dive and not outline:
         thought["thought"] += " Enrichment complete. Transitioning to 'outlining'."
         return {"current_phase": "outlining", "thought_process": [thought]}
 
-    # Outlining → Validating (after outline is created)
+    # ── Outlining → Validating ──────────────────────────────────────────────
     if phase == "outlining" and outline:
         thought["thought"] += " Outline generated. Transitioning to 'validating'."
         return {"current_phase": "validating", "thought_process": [thought]}
 
-    # Validating — check if debate rounds maxed
+    # ── Validating ──────────────────────────────────────────────────────────
     if phase == "validating" and validation:
         if validation.get("passed"):
-            thought["thought"] += " Validation passed. Waiting for user approval."
-            return {"thought_process": [thought]}  # Stay in validating, routing handles user_approval
+            thought["thought"] += " Validation passed. Routing to user approval."
+            return {"thought_process": [thought]}
+
         if debate_rounds >= settings.MAX_DEBATE_ROUNDS:
-            thought["thought"] += " Max debate rounds reached. Arbitrating: forcing proceed to 'outlining'."
-            # Story Director arbitrates — force proceed
-            return {"current_phase": "outlining", "debate_rounds": 0, "thought_process": [thought]}
+            thought["thought"] += f" Max debate rounds ({settings.MAX_DEBATE_ROUNDS}) reached. Forcing user approval."
+            return {
+                "targeted_probe_mode": False,
+                "thought_process": [thought],
+            }
+
+        thought["thought"] += f" Validation failed (round {debate_rounds}). Routing back for more material."
+        return {"thought_process": [thought]}
 
     thought["thought"] += " No phase transition needed."
     return {"thought_process": [thought]}
 
+
+def _check_fragments_ready(messages: list) -> bool:
+    """Check if Story Miner signaled [FRAGMENTS_READY] in last AI message."""
+    for msg in reversed(messages):
+        if hasattr(msg, "content") and "[FRAGMENTS_READY]" in msg.content:
+            return True
+        if isinstance(msg, dict) and "[FRAGMENTS_READY]" in msg.get("content", ""):
+            return True
+    return False
+
+
+# ── Story Director Routing ────────────────────────────────────────────────────
 
 def story_director_routing(state: ArcwrightState) -> str | list:
     """
@@ -82,9 +104,9 @@ def story_director_routing(state: ArcwrightState) -> str | list:
     Returns next node name (or list of Send() for parallel execution).
     """
     from langgraph.types import Send
+    from langgraph.graph import END
 
     phase = state.get("current_phase", "mining")
-    messages = state.get("messages", [])
     fragments = state.get("story_fragments", [])
     deep_dive = state.get("deep_dive_analysis", {})
     web_research = state.get("web_research", [])
@@ -92,97 +114,120 @@ def story_director_routing(state: ArcwrightState) -> str | list:
     validation = state.get("validation_result")
     outline_approved = state.get("outline_approved", False)
     debate_rounds = state.get("debate_rounds", 0)
+    rag_bootstrapped = state.get("rag_bootstrapped", False)
+    rag_fragment_count = state.get("rag_fragment_count", 0)
+    targeted_probe = state.get("targeted_probe_mode", False)
 
-    # ── Mining phase ──────────────────────────────────────────────────────────
+    quality_count = sum(
+        1 for f in fragments
+        if f.get("quality_score", 0) >= settings.FRAGMENT_QUALITY_THRESHOLD
+    )
+
+    # ── Mining phase ────────────────────────────────────────────────────────
     if phase == "mining":
-        # Extract fragments ready signal from last message if any
-        miner_ready = False
-        if messages:
-            last_msg = messages[-1]
-            if hasattr(last_msg, "content") and "[FRAGMENTS_READY]" in last_msg.content:
-                miner_ready = True
-            elif isinstance(last_msg, dict) and "[FRAGMENTS_READY]" in last_msg.get("content", ""):
-                miner_ready = True
+        miner_ready = _check_fragments_ready(state.get("messages", []))
+        sufficient = quality_count >= settings.MIN_STORY_FRAGMENTS
 
-        if len(fragments) < settings.MIN_STORY_FRAGMENTS and not miner_ready:
-            rag_context = state.get("rag_context", [])
-            if not rag_context:
-                return "rag_librarian"  # Get RAG context first for smart questions
-            return "story_miner"        # Then mine with RAG-guided questions
-        # Enough fragments — transition handled by story_director_node
+        if not sufficient and not miner_ready:
+            # 1. Bootstrap RAG sebelum interview pertama
+            if not rag_bootstrapped:
+                return "rag_librarian"
 
-    # ── Enriching phase ───────────────────────────────────────────────────────
+            # 2. Jika ada fragment baru sejak RAG terakhir → query RAG dulu
+            if len(fragments) > rag_fragment_count:
+                return "rag_librarian"
+
+            # 3. Kalau validator set targeted_probe → Story Miner tanya targeted
+            # 4. Normal interview
+            return "story_miner"
+
+        # Enough quality fragments → Director node transition to enriching
+
+    # ── Enriching phase ─────────────────────────────────────────────────────
     if phase == "enriching":
         missing = []
-        # Only dispatch agents that haven't completed yet (avoid re-running done work)
         if not deep_dive:
             missing.append(Send("deep_dive", state))
         if not web_research and settings.TAVILY_API_KEY:
             missing.append(Send("web_researcher", state))
         if missing:
-            return missing  # Parallel Send() for whichever is still missing
-        # Both done — Director node will transition phase on next tick
-        return "story_director"
+            return missing  # Parallel Send()
+        return "story_director"  # Both done → Director transitions phase
 
-    # ── Outlining phase ───────────────────────────────────────────────────────
+    # ── Outlining phase ─────────────────────────────────────────────────────
     if phase == "outlining":
+        # Query RAG for outlining context if not already done
+        rag_results = state.get("rag_results", [])
+        has_outlining_rag = any(r.get("query_purpose") == "outlining" for r in rag_results)
+        if not has_outlining_rag:
+            return "rag_librarian"
         return "outline_writer"
 
-    # Validating phase ──────────────────────────────────────────────────────
+    # ── Validating phase ────────────────────────────────────────────────────
     if phase == "validating":
         if outline and not validation:
             return "validator"
+
         if validation:
             if validation.get("passed"):
                 return "user_approval"
-            # Debate loop — debate_rounds tracking is in validator_node
-            if debate_rounds >= settings.MAX_DEBATE_ROUNDS:
-                # Director arbitrates: force proceed to user
-                return "user_approval"
-            # Belum passed & belum max rounds → balik lagi ke story_miner minta info tambahan (atau outline_writer)
-            # Route yang benar ada di validator_debate_routing, jadi director cuma route ke validator 
-            # lalu validator ke routing_node. 
-            return "user_approval" # Kita bypass aja debate loop sementara karena ini bikin pipeline hang nunggu input yg salah
 
-    # ── Scripting phase ───────────────────────────────────────────────────────
+            # Max rounds → force approval (Story Director arbitrates)
+            if debate_rounds >= settings.MAX_DEBATE_ROUNDS:
+                return "user_approval"
+
+            # Debate loop aktif:
+            # Score 25-34 → Outline Writer revisi (tidak butuh info baru dari user)
+            # Score <25 → Story Miner tanya user (targeted_probe_mode=True)
+            score = validation.get("score", 0)
+            if score >= 25:
+                # Outline Writer revisi berdasarkan feedback validator
+                return "outline_writer"
+            else:
+                # Story Miner perlu tanya user lebih lanjut (targeted)
+                return "story_miner"
+
+    # ── Scripting phase ─────────────────────────────────────────────────────
     if phase == "scripting":
         if outline_approved:
+            # Query RAG for scripting context if not already done
+            rag_results = state.get("rag_results", [])
+            has_scripting_rag = any(r.get("query_purpose") == "scripting" for r in rag_results)
+            if not has_scripting_rag:
+                return "rag_librarian"
             return "script_writer"
         return "user_approval"
 
-    # ── Complete ──────────────────────────────────────────────────────────────
+    # ── Complete ─────────────────────────────────────────────────────────────
     if phase == "complete":
-        from langgraph.graph import END
         return END
 
     # Default fallback
     return "story_miner"
 
 
-# ── Validator Debate Routing ───────────────────────────────────────────────────
+# ── Validator Debate Routing ──────────────────────────────────────────────────
 
 def validator_debate_routing(state: ArcwrightState) -> str:
     """
     Routing function after validator node.
-    Decides: outline_writer (revision), story_miner (debate), or story_director (pass/arbitrate).
+    Decides: outline_writer (revision only), story_miner (need user input), or story_director (pass/arbitrate).
     """
     validation = state.get("validation_result", {})
     score = validation.get("score", 0) if validation else 0
     rounds = state.get("debate_rounds", 0)
 
     if score >= settings.VALIDATOR_PASS_THRESHOLD:
-        # PASS → back to Story Director → user_approval
         return "story_director"
 
     if rounds >= settings.MAX_DEBATE_ROUNDS:
-        # Max rounds reached → Story Director arbitrates
         return "story_director"
 
     if score >= 25:
-        # REVISE: loop to outline_writer with feedback
+        # REVISE: outline structure okay, just needs rewriting → Outline Writer
         return "outline_writer"
 
-    # REJECT (<25): need new material from Story Miner
+    # REJECT (<25): need new story material from user → Story Miner (targeted mode)
     return "story_miner"
 
 
@@ -197,45 +242,45 @@ def user_approval_node(state: ArcwrightState) -> dict:
     """
     outline = state.get("story_outline", {})
 
-    # Format outline for user display
     outline_display = {
-        "title": outline.get("title", ""),
-        "hook": outline.get("hook", ""),
-        "setup": outline.get("setup", ""),
+        "title":         outline.get("title", ""),
+        "hook":          outline.get("hook", ""),
+        "setup":         outline.get("setup", ""),
         "turning_point": outline.get("turning_point", ""),
-        "struggle": outline.get("struggle", ""),
-        "resolution": outline.get("resolution", ""),
-        "punchline": outline.get("punchline", ""),
-        "platform": outline.get("platform", ""),
-        "duration": outline.get("estimated_duration", ""),
+        "struggle":      outline.get("struggle", ""),
+        "resolution":    outline.get("resolution", ""),
+        "punchline":     outline.get("punchline", ""),
+        "platform":      outline.get("platform", ""),
+        "duration":      outline.get("estimated_duration", ""),
     }
 
     # Pause and surface outline to user
-    # interrupt() saves state — resumable via Command(resume=...)
     decision = interrupt({
-        "type": "outline_approval",
+        "type":    "outline_approval",
         "outline": outline_display,
         "message": "Here's your story outline. What would you like to do?",
         "options": ["approve", "revise", "reject"],
     })
 
-    # Process user decision
     if decision == "approve":
         return {
             "outline_approved": True,
-            "current_phase": "scripting",
+            "current_phase":    "scripting",
         }
     elif decision == "revise":
         return {
-            "outline_approved": False,
-            "current_phase": "outlining",
-            "validation_result": None,   # Reset validation for fresh pass
+            "outline_approved":  False,
+            "current_phase":     "outlining",
+            "validation_result": None,
+            "story_outline":     None,
         }
     else:  # reject
         return {
-            "outline_approved": False,
-            "current_phase": "mining",
-            "story_outline": None,
+            "outline_approved":  False,
+            "current_phase":     "mining",
+            "story_outline":     None,
             "validation_result": None,
-            "debate_rounds": 0,
+            "debate_rounds":     0,
+            "targeted_probe_mode": False,
+            # Pertahankan fragments — user mungkin mau explore cerita berbeda dari material yang sama
         }

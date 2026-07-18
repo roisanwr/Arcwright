@@ -23,7 +23,7 @@ related:
 > **Deadline:** 31 Juli 2026
 > **Framework:** LangGraph (selected via 9.6/10 weighted score)
 > **Repository:** [[https://github.com/roisanwr/Arcwright]]
-> **RAG Engine:** Arcwright Forge (ChromaDB + BGE-M3)
+> **RAG Engine:** Arcwright Forge (Qdrant + BGE-M3)
 > **Connects to:** [[2026-07-10-arcwright-deep-research]], [[2026-07-08-storytelling-ai-agent-roles]]
 
 ---
@@ -52,8 +52,8 @@ Membangun **multi-agent orchestration system** yang membantu orang menemukan, me
 | 1.1 | Batch-process remaining 28 PDFs through forge pipeline | 2 days | PDF files available |
 | 1.2 | Verify chunk quality & embedding accuracy | 1 day | 1.1 done |
 | 1.3 | Build RAG query testing suite (10 test queries) | 1 day | 1.2 done |
-| 1.4 | Set up ChromaDB collection per book + cross-collection search | 1 day | 1.1 done |
-| 1.5 | Write integration test: forge → ChromaDB → query result | 1 day | 1.3, 1.4 done |
+| 1.4 | Set up Qdrant collection per book + cross-collection search | 1 day | 1.1 done |
+| 1.5 | Write integration test: forge → Qdrant → query result | 1 day | 1.3, 1.4 done |
 | 1.6 | Performance benchmark: query latency, recall, relevance | 1 day | 1.5 done |
 
 **Deliverable:** Fully functional RAG pipeline with 29 books indexed and queryable
@@ -68,7 +68,7 @@ Membangun **multi-agent orchestration system** yang membantu orang menemukan, me
 | Task | Description | Est. Time |
 |------|-------------|-----------|
 | 2.1 | Project scaffold: LangGraph project structure, config, dependencies | 0.5 day |
-| 2.2 | **RAG Librarian Agent** — connect to forge ChromaDB as tool | 1 day |
+| 2.2 | **RAG Librarian Agent** — connect to forge Qdrant as tool | 1 day |
 | 2.3 | **Story Miner Agent** — conversational interview loop, no external tools | 1 day |
 | 2.4 | **Web Researcher Agent** — Tavily/Serper web search tool | 0.5 day |
 | 2.5 | **Deep Dive Agent** — multi-perspective analysis with constrained web access | 1 day |
@@ -294,21 +294,21 @@ class ArcwrightState(TypedDict):
 |-----------|-----------|---------|---------|
 | **Framework** | LangGraph | v0.4+ | Agent orchestration |
 | **LLM** | GPT-4o / Claude Sonnet | Latest | Agent reasoning |
-| **RAG DB** | ChromaDB | v0.6+ | Vector storage |
+| **RAG DB** | Qdrant | v0.6+ | Vector storage |
 | **Embeddings** | BGE-M3 (BAAI) | Latest | 1024-dim vector |
 | **Web Search** | Tavily / Serper | API | Real-time research |
 | **PDF Pipeline** | marker-pdf + Surya | Latest | OCR extraction |
 | **Persistence** | SQLite | Built-in | Session checkpointing |
 | **Observability** | LangSmith | Free tier | Tracing, debugging |
 | **Interface** | CLI (initial) | — | User interaction |
-| **Package** | LangChain | v0.3+ | Chroma integration |
+| **Package** | LangChain | v0.3+ | Qdrant integration |
 
 ### Directory Structure
 
 ```
 ~/Arcwright/
 ├── forge/                      ← Existing RAG pipeline
-│   └── output/chroma_db/       ← Vector store (29 books)
+│   └── output/qdrant_storage/       ← Vector store (29 books)
 ├── agents/                     ← NEW: LangGraph agents
 │   ├── __init__.py
 │   ├── state.py                ← ArcwrightState schema

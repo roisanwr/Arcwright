@@ -143,20 +143,29 @@ function App() {
     const [processLog,   setProcessLog]   = useState([]);
     const [reasonings,   setReasonings]   = useState([]);
     const [script,       setScript]       = useState(null);
-    const [sidebarTab,   setSidebarTab]   = useState("log"); // "log" | "reasoning" | "script"
+    const [sidebarTab,   setSidebarTab]   = useState("log");
     const [error,        setError]        = useState(null);
     const [connected,    setConnected]    = useState(false);
     const [showMobileSidebar, setShowMobileSidebar] = useState(false);
 
+    // ── Welcome screen state ──────────────────────────────────────────────────
+    const [welcomed,    setWelcomed]    = useState(false);  // false = show welcome screen
+    const [userName,    setUserName]    = useState("");
+    const [userLang,    setUserLang]    = useState("");     // "id" | "en" — empty until chosen
+    const [nameStep,    setNameStep]    = useState(false);  // true = name input visible
+    const [agentsReady, setAgentsReady] = useState(false);  // true = backend responded
+
     const messagesEndRef = useRef(null);
     const reasoningsEndRef = useRef(null);
+    const nameInputRef = useRef(null);
 
-    const scrollToBottom = useCallback(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, []);
-
+    const scrollToBottom = useCallback(() =>
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), []);
     useEffect(() => { scrollToBottom(); }, [messages]);
     useEffect(() => { reasoningsEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [reasonings]);
+
+    // Focus name input when nameStep becomes visible
+    useEffect(() => { if (nameStep) nameInputRef.current?.focus(); }, [nameStep]);
 
     const addLogEvent = useCallback((node, message) => {
         const now = new Date();
@@ -164,15 +173,18 @@ function App() {
         setProcessLog(prev => [...prev.slice(-100), { node, message, ts }]);
     }, []);
 
-    // ── Inisialisasi session & SSE ────────────────────────────────────────────
-    useEffect(() => {
+    // ── Start session (called after welcome screen) ───────────────────────────
+    const startSession = useCallback((name, lang) => {
         let evtSource = null;
-
-        fetch("/api/start")
+        const params = new URLSearchParams({ user_name: name, language: lang, platform: "general" });
+        fetch(`/api/start?${params}`)
             .then(r => r.json())
             .then(data => {
                 const sid = data.session_id;
                 setSessionId(sid);
+                setAgentsReady(true);
+                setWelcomed(true);
+                setIsProcessing(true);
 
                 evtSource = new EventSource(`/api/stream?session_id=${sid}`);
                 setConnected(true);
@@ -188,41 +200,32 @@ function App() {
                     const d = JSON.parse(e.data);
                     setCurrentNode(d.node || "idle");
                     setStatusMsg(d.message || "");
-                    const processing = d.node !== "idle";
-                    setIsProcessing(processing);
+                    setIsProcessing(d.node !== "idle");
                     addLogEvent(d.node, d.message);
                 });
 
                 evtSource.addEventListener("reasoning", e => {
                     const r = JSON.parse(e.data);
                     setReasonings(prev => [...prev, r]);
-                    // Auto-switch to reasoning tab if it's explicitly a thought process and user is currently on log
-                    if (r.type === "thought_process" && sidebarTab === "log") {
-                         setSidebarTab("reasoning");
-                    }
+                    if (r.type === "thought_process" && sidebarTab === "log")
+                        setSidebarTab("reasoning");
                 });
 
                 evtSource.addEventListener("script", e => {
-                    const s = JSON.parse(e.data);
-                    setScript(s);
+                    setScript(JSON.parse(e.data));
                     setSidebarTab("script");
                 });
 
-                evtSource.addEventListener("outline", e => {
-                    setSidebarTab("log");
-                });
+                evtSource.addEventListener("outline", () => setSidebarTab("log"));
 
                 evtSource.addEventListener("error", e => {
-                    try {
-                        const d = JSON.parse(e.data);
-                        setError(d.message);
-                    } catch {}
+                    try { setError(JSON.parse(e.data).message); } catch {}
                     setIsProcessing(false);
                 });
 
                 evtSource.onerror = () => {
                     setConnected(false);
-                    setStatusMsg("Koneksi terputus...");
+                    setStatusMsg(lang === "id" ? "Koneksi terputus..." : "Connection lost...");
                     setIsProcessing(false);
                 };
             })
@@ -230,9 +233,23 @@ function App() {
                 setError("Gagal terhubung ke server. Pastikan api_server.py sudah berjalan.");
                 setIsProcessing(false);
             });
-
         return () => { if (evtSource) evtSource.close(); };
-    }, []);
+    }, [addLogEvent]);
+
+    // ── Welcome screen: language chosen → show name input ─────────────────────
+    const handleLangChoice = (lang) => {
+        setUserLang(lang);
+        setNameStep(true);
+    };
+
+    // ── Welcome screen: name submitted → spin up backend ──────────────────────
+    const handleNameSubmit = (e) => {
+        e.preventDefault();
+        const name = userName.trim() || (userLang === "id" ? "Kamu" : "You");
+        setUserName(name);
+        startSession(name, userLang);
+    };
+
 
     // ── Kirim pesan ───────────────────────────────────────────────────────────
     const sendMessage = async (e) => {
@@ -270,6 +287,92 @@ function App() {
     };
 
     // ── Render ────────────────────────────────────────────────────────────────
+    const isId = userLang === "id";
+
+    // ── Welcome Screen ────────────────────────────────────────────────────────
+    if (!welcomed) {
+        return (
+            <div className="flex items-center justify-center h-screen bg-gray-950 px-6">
+                <div className="w-full max-w-md space-y-8 text-center">
+
+                    {/* Avatar */}
+                    <div className="flex flex-col items-center gap-3">
+                        <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 flex items-center justify-center text-4xl shadow-lg shadow-purple-900/40">
+                            🎭
+                        </div>
+                        <div>
+                            <h1 className="text-2xl font-bold tracking-tight">Halo! Aku Yui.</h1>
+                            <p className="text-gray-400 text-sm mt-1">
+                                Your AI Storytelling Coach · powered by Arcwright
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* Description */}
+                    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 text-sm text-gray-300 text-left space-y-2">
+                        <p>Aku di sini untuk membantumu menemukan cerita yang layak disampaikan dari momen sehari-hari.</p>
+                        <p className="text-gray-500 text-xs">Kita akan ngobrol santai, aku tanya-tanya, dan kita buat skrip yang bisa langsung kamu pakai.</p>
+                        <p className="text-yellow-400/80 text-xs pt-1">⚡ Arcwright menggunakan 8 AI agents yang bekerja bareng di belakang layar.</p>
+                    </div>
+
+                    {/* Language picker (step 1) */}
+                    {!nameStep && (
+                        <div className="space-y-3">
+                            <p className="text-sm text-gray-400">Arcwright supports 2 languages. Which do you prefer?</p>
+                            <div className="flex gap-3 justify-center">
+                                <button
+                                    onClick={() => handleLangChoice("id")}
+                                    className="flex-1 bg-gray-800 hover:bg-blue-900/40 border border-gray-700 hover:border-blue-500 text-white rounded-xl py-4 px-4 transition-all duration-150 group"
+                                >
+                                    <div className="text-2xl mb-1">🇮🇩</div>
+                                    <div className="font-semibold text-sm">Bahasa Indonesia</div>
+                                    <div className="text-gray-500 text-xs">Kita ngobrol pake Indo</div>
+                                </button>
+                                <button
+                                    onClick={() => handleLangChoice("en")}
+                                    className="flex-1 bg-gray-800 hover:bg-blue-900/40 border border-gray-700 hover:border-blue-500 text-white rounded-xl py-4 px-4 transition-all duration-150 group"
+                                >
+                                    <div className="text-2xl mb-1">🇬🇧</div>
+                                    <div className="font-semibold text-sm">English</div>
+                                    <div className="text-gray-500 text-xs">Let's talk in English</div>
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Name input (step 2) */}
+                    {nameStep && (
+                        <form onSubmit={handleNameSubmit} className="space-y-4">
+                            <div className="text-left space-y-2">
+                                <label className="text-sm text-gray-300 block">
+                                    {userLang === "id" ? "Siapa namamu?" : "What's your name?"}
+                                </label>
+                                <input
+                                    ref={nameInputRef}
+                                    type="text"
+                                    value={userName}
+                                    onChange={e => setUserName(e.target.value)}
+                                    placeholder={userLang === "id" ? "Nama panggilan kamu..." : "Your name..."}
+                                    className="w-full bg-gray-800 border border-gray-700 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 text-white rounded-xl px-4 py-3 text-sm outline-none transition-all"
+                                />
+                            </div>
+                            <button
+                                type="submit"
+                                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-semibold py-3 rounded-xl transition-all duration-150 shadow-lg shadow-blue-900/30"
+                            >
+                                {userLang === "id" ? "Mulai Sesi ✨" : "Start Session ✨"}
+                            </button>
+                            <button type="button" onClick={() => setNameStep(false)} className="text-xs text-gray-600 hover:text-gray-400 transition-colors">
+                                ← {userLang === "id" ? "Ganti bahasa" : "Change language"}
+                            </button>
+                        </form>
+                    )}
+
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="flex flex-col md:flex-row flex-1 h-screen overflow-hidden">
 
@@ -312,13 +415,20 @@ function App() {
                     {messages.length === 0 && !isProcessing && (
                         <div className="flex flex-col items-center justify-center h-full text-center text-gray-600 gap-3">
                             <div className="text-4xl">🎭</div>
-                            <p className="text-sm">Yui siap menemanimu membuat cerita.<br/>Ketik sesuatu untuk memulai!</p>
+                            <p className="text-sm">
+                                {isId ? "Yui siap menemanimu membuat cerita." : "Yui is ready to help you find your story."}
+                            </p>
                         </div>
                     )}
                     {messages.length === 0 && isProcessing && (
                         <div className="flex flex-col items-center justify-center h-full text-center text-gray-600 gap-3">
                             <div className="text-4xl animate-bounce">🎭</div>
-                            <p className="text-sm">Memulai pipeline Arcwright<br/>Menunggu agen pertama...</p>
+                            <p className="text-sm">
+                                {isId
+                                    ? <span>Hei <strong className="text-white">{userName}</strong>! Saya menghubungkan semua agen AI...<br/>Ini membutuhkan beberapa detik.</span>
+                                    : <span>Hey <strong className="text-white">{userName}</strong>! Connecting all AI agents...<br/>This takes a few seconds.</span>
+                                }
+                            </p>
                             <LoadingDots />
                         </div>
                     )}
@@ -352,7 +462,11 @@ function App() {
                             value={inputValue}
                             onChange={e => setInputValue(e.target.value)}
                             onKeyDown={handleKeyDown}
-                            placeholder={isProcessing ? "Yui sedang berpikir..." : "Ketik pesanmu (Tekan Enter untuk kirim, Shift+Enter untuk baris baru)..."}
+                            placeholder={
+                                isProcessing
+                                    ? (isId ? "Yui sedang berpikir..." : "Yui is thinking...")
+                                    : (isId ? "Ketik pesanmu (Enter untuk kirim, Shift+Enter untuk baris baru)..." : "Type your message (Enter to send, Shift+Enter for newline)...")
+                            }
                             disabled={isProcessing || !connected}
                             rows={1}
                             className="flex-1 bg-gray-800 border border-gray-700 text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-40 placeholder-gray-600 resize-none overflow-hidden"
@@ -363,11 +477,13 @@ function App() {
                             disabled={isProcessing || !inputValue.trim() || !connected}
                             className="bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors shrink-0 self-end h-[44px]"
                         >
-                            {isProcessing ? "⏳" : "Kirim"}
+                            {isProcessing ? "⏳" : (isId ? "Kirim" : "Send")}
                         </button>
                     </form>
                     {!connected && (
-                        <p className="text-xs text-red-400 mt-1 text-center">Koneksi ke server terputus.</p>
+                        <p className="text-xs text-red-400 mt-1 text-center">
+                            {isId ? "Koneksi ke server terputus." : "Connection to server lost."}
+                        </p>
                     )}
                 </div>
             </div>
