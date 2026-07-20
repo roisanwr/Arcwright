@@ -137,6 +137,7 @@ Build the most compelling outline possible. Apply the storytelling framework exp
     outline = _parse_outline(response_text, platform)
     return {
         "story_outline": outline,
+        "validation_result": None,
         "current_phase": "validating",
         "thought_process": [thought],
     }

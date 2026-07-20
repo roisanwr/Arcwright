@@ -344,8 +344,12 @@ def story_miner_node(state: ArcwrightState, llm) -> dict:
 
     updates["interview_questions_asked"] = [clean_response[:200]]
 
-    # Reset targeted probe mode setelah selesai bertanya
+    # Reset targeted probe mode setelah selesai bertanya & restart enrichment
     if targeted:
         updates["targeted_probe_mode"] = False
+        updates["validation_result"] = None
+        updates["story_outline"] = None
+        updates["deep_dive_analysis"] = {}
+        updates["current_phase"] = "enriching"
 
     return updates

@@ -52,9 +52,11 @@ _agent_cache: dict = {}    # keyed by llm identity
 
 def _build_rag_tool():
     """Build the Qdrant retriever tool. Lazy-loaded on first call."""
+    import torch
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     embeddings = HuggingFaceEmbeddings(
         model_name=settings.EMBEDDING_MODEL,
-        model_kwargs={"device": "cuda"},
+        model_kwargs={"device": device},
         encode_kwargs={"normalize_embeddings": True},
     )
     qdrant_client = QdrantClient(url=settings.QDRANT_URL)
