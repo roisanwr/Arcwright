@@ -20,7 +20,7 @@ from sse_starlette.sse import EventSourceResponse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from config.settings import validate_config
+from config.settings import validate_config, ADMIN_KEY
 from graph.pipeline import create_arcwright_graph, make_initial_state
 from langgraph.types import Command
 
@@ -552,6 +552,88 @@ def delete_session(session_id: str, device_id: str):
     )
     _hist_conn.commit()
     return {"ok": True}
+
+
+def _check_admin(key: str):
+    """Validasi admin key. Raise 403 jika salah."""
+    if not ADMIN_KEY or key != ADMIN_KEY:
+        raise HTTPException(status_code=403, detail="Akses ditolak. Admin key salah.")
+
+
+# ── Admin endpoints (/api/admin/*) ────────────────────────────────────────────
+
+@app.get("/api/admin/sessions")
+def admin_get_all_sessions(key: str = ""):
+    """Admin: ambil SEMUA sesi dari semua user, dikelompokkan per device_id."""
+    _check_admin(key)
+    cur = _hist_conn.execute(
+        """SELECT session_id, device_id, title, platform, language,
+                  status, created_at, updated_at
+           FROM session_meta
+           ORDER BY updated_at DESC
+           LIMIT 200"""
+    )
+    rows = [dict(r) for r in cur.fetchall()]
+
+    # Stats agregat
+    stats_cur = _hist_conn.execute(
+        """SELECT
+             COUNT(*)                                          AS total_sessions,
+             COUNT(DISTINCT device_id)                        AS total_users,
+             SUM(CASE WHEN status='active'    THEN 1 ELSE 0 END) AS active,
+             SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) AS completed,
+             SUM(CASE WHEN date(created_at)=date('now') THEN 1 ELSE 0 END) AS today
+           FROM session_meta WHERE status != 'archived'"""
+    )
+    stats = dict(stats_cur.fetchone() or {})
+
+    # Cek sesi mana yang sedang live (punya SSE queue aktif)
+    live_ids = list(session_queues.keys())
+
+    return {"sessions": rows, "stats": stats, "live_session_ids": live_ids}
+
+
+@app.get("/api/admin/session/{session_id}")
+def admin_get_session(session_id: str, key: str = ""):
+    """Admin: ambil chat history sesi manapun tanpa cek device_id."""
+    _check_admin(key)
+    meta_cur = _hist_conn.execute(
+        "SELECT * FROM session_meta WHERE session_id=?", (session_id,)
+    )
+    meta = meta_cur.fetchone()
+    if not meta:
+        raise HTTPException(status_code=404, detail="Sesi tidak ditemukan")
+    msgs = _hist_conn.execute(
+        """SELECT role, content, msg_type, created_at
+           FROM chat_messages WHERE session_id=? ORDER BY created_at ASC""",
+        (session_id,)
+    )
+    return {
+        "session_id": session_id,
+        "meta": dict(meta),
+        "messages": [dict(m) for m in msgs.fetchall()],
+        "is_live": session_id in session_queues,
+    }
+
+
+class AdminChatRequest(BaseModel):
+    session_id: str
+    message: str
+    key: str = ""
+
+
+@app.post("/api/admin/chat")
+def admin_send_chat(req: AdminChatRequest):
+    """Admin: inject pesan ke sesi manapun yang sedang live."""
+    _check_admin(req.key)
+    if req.session_id not in session_queues:
+        session_queues[req.session_id] = asyncio.Queue()
+    threading.Thread(
+        target=_run_graph_thread,
+        args=(req.session_id, req.message, False),
+        daemon=True,
+    ).start()
+    return {"status": "injected"}
 
 
 @app.get("/api/stream")

@@ -22,6 +22,9 @@ OPENAI_API_KEY     = os.getenv("OPENAI_API_KEY", "")
 ANTHROPIC_API_KEY  = os.getenv("ANTHROPIC_API_KEY", "")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 
+# Admin / Dev Panel key
+ADMIN_KEY = os.getenv("ARCWRIGHT_ADMIN_KEY", "")
+
 # ── Default Provider & Model (fallback kalau agent tidak dikonfigurasi) ───────
 DEFAULT_PROVIDER = os.getenv("DEFAULT_PROVIDER", "openai")
 DEFAULT_MODEL    = os.getenv("DEFAULT_MODEL", "gpt-4o-mini")
