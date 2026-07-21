@@ -1,19 +1,29 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 @import "tailwindcss";
 
 :root {
-  --bg-deep:     #080e18;
-  --bg-surface:  #0d1520;
-  --bg-elevated: #121e30;
-  --border:      #1a2d47;
-  --border-soft: #152338;
-  --accent:      #2dd4bf;
-  --accent-dim:  rgba(45, 212, 191, 0.15);
-  --accent-2:    #818cf8;
-  --text-primary: #e8e3dc;
-  --text-secondary: #8899a6;
-  --text-muted:  #4a5c6b;
-  --logo-color:  #3d4852;
+  /* Landing — light mode */
+  --land-bg:       #FAF7F2;
+  --land-surface:  #F2EEE8;
+  --land-border:   #E8E2D9;
+  --land-text:     #1C1917;
+  --land-muted:    #78716C;
+  --land-accent:   #4F46E5;
+  --land-accent-2: #7C3AED;
+
+  /* Chat — dark mode */
+  --bg-deep:      #0C0F14;
+  --bg-surface:   #111620;
+  --bg-elevated:  #161D2C;
+  --border:       #1E2D45;
+  --border-soft:  #162035;
+  --accent:       #4F46E5;
+  --accent-dim:   rgba(79, 70, 229, 0.15);
+  --accent-glow:  rgba(79, 70, 229, 0.08);
+  --accent-2:     #7C3AED;
+  --text-primary:   #F0EDE8;
+  --text-secondary: #8896A5;
+  --text-muted:     #3D5166;
 }
 
 * { box-sizing: border-box; }
@@ -22,10 +32,11 @@ body {
   margin: 0;
   padding: 0;
   overflow-x: hidden;
-  background-color: var(--bg-deep);
-  color: var(--text-primary);
+  background-color: var(--land-bg);
+  color: var(--land-text);
   font-family: 'Inter', -apple-system, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* Scrollbar */

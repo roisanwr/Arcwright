@@ -28,7 +28,7 @@ function OutlineCard({ outline, onDecision, lang }: {
   return (
     <div
       className="rounded-xl border p-4 text-sm space-y-3 max-w-xl w-full"
-      style={{ background: '#0d1f38', borderColor: '#1e3a5f' }}
+      style={{ background: '#111620', borderColor: '#1e3a5f' }}
     >
       <div className="flex items-center gap-2 pb-2" style={{ borderBottom: '1px solid #1a2d47' }}>
         <span style={{ color: '#2dd4bf' }}>✦</span>
@@ -89,7 +89,7 @@ function ScriptCard({ script }: { script: ScriptEvent }) {
   return (
     <div
       className="rounded-xl border p-4 text-sm space-y-3 max-w-xl w-full"
-      style={{ background: '#0d1f38', borderColor: '#2d3d52' }}
+      style={{ background: '#111620', borderColor: '#2d3d52' }}
     >
       <div className="flex items-center justify-between pb-2" style={{ borderBottom: '1px solid #1a2d47' }}>
         <div className="flex items-center gap-2">
@@ -164,7 +164,7 @@ function ChatBubble({ msg, lang, onDecision }: {
           <YuiAvatar />
           <div
             className="rounded-2xl rounded-bl-sm px-4 py-3 text-sm leading-relaxed"
-            style={{ background: '#0d1f38', border: '1px solid #1a2d47', color: '#e8e3dc' }}
+            style={{ background: '#111620', border: '1px solid #1a2d47', color: '#e8e3dc' }}
           >
             <MarkdownContent content={msg.content} />
           </div>
@@ -202,7 +202,7 @@ function TypingIndicator() {
         <YuiAvatar />
         <div
           className="rounded-2xl rounded-bl-sm px-4 py-3"
-          style={{ background: '#0d1f38', border: '1px solid #1a2d47' }}
+          style={{ background: '#111620', border: '1px solid #1a2d47' }}
         >
           <LoadingDots size="sm" />
         </div>
@@ -412,7 +412,7 @@ function Onboarding({ onComplete }: OnboardingProps) {
                   style={{ background: '#0d1520', border: '1px solid #1a2d47', color: '#e8e3dc' }}
                   onMouseEnter={e => {
                     e.currentTarget.style.borderColor = '#2dd4bf'
-                    e.currentTarget.style.background  = '#0d1f38'
+                    e.currentTarget.style.background  = '#111620'
                   }}
                   onMouseLeave={e => {
                     e.currentTarget.style.borderColor = '#1a2d47'
@@ -486,7 +486,7 @@ function Onboarding({ onComplete }: OnboardingProps) {
                   style={{ background: '#0d1520', border: '1px solid #1a2d47', color: '#e8e3dc' }}
                   onMouseEnter={e => {
                     e.currentTarget.style.borderColor = '#2dd4bf'
-                    e.currentTarget.style.background  = '#0d1f38'
+                    e.currentTarget.style.background  = '#111620'
                   }}
                   onMouseLeave={e => {
                     e.currentTarget.style.borderColor = '#1a2d47'

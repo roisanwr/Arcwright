@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import Dict, Any
 
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
@@ -277,10 +278,18 @@ async def _on_startup():
     _main_loop = asyncio.get_running_loop()
 
 
+# ── Static files (React frontend build) ──────────────────────────────────────
+
+FRONTEND_DIST = Path(__file__).parent / "frontend" / "dist"
+if FRONTEND_DIST.exists():
+    # Serve static assets (JS, CSS, images)
+    app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="assets")
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
-@app.get("/")
-def serve_ui():
+@app.get("/dev")
+def serve_dev_ui():
+    """Developer UI (original ui.html) — tetap tersedia di /dev."""
     html_path = Path(__file__).parent / "ui.html"
     if html_path.exists():
         return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
@@ -346,7 +355,27 @@ async def stream_events(session_id: str, request: Request):
     return EventSourceResponse(generator())
 
 
+# ── SPA catch-all: semua route non-API → index.html ──────────────────────────
+
+@app.get("/{full_path:path}")
+def serve_spa(full_path: str):
+    """Serve React SPA untuk semua route (/, /chat, dll.)."""
+    # Jangan intercept /api/* — itu sudah ditangani route di atas
+    if full_path.startswith("api/"):
+        raise HTTPException(status_code=404)
+    dist_index = FRONTEND_DIST / "index.html"
+    if dist_index.exists():
+        return FileResponse(str(dist_index))
+    # Fallback ke ui.html lama jika frontend belum di-build
+    html_path = Path(__file__).parent / "ui.html"
+    if html_path.exists():
+        return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
+    return HTMLResponse("<h1>Frontend not found. Run: cd frontend && npm run build</h1>", status_code=503)
+
+
 if __name__ == "__main__":
     import uvicorn
-    print("🎭 Arcwright Web UI → http://localhost:8000")
+    mode = "React UI" if FRONTEND_DIST.exists() else "Legacy ui.html"
+    print(f"🎭 Arcwright Web UI ({mode}) → http://localhost:8765")
+    print(f"   Developer UI → http://localhost:8765/dev")
     uvicorn.run("api_server:app", host="0.0.0.0", port=8765, reload=False)
