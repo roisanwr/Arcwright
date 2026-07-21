@@ -52,6 +52,78 @@ const AGENT_META = {
 };
 const getAgent = (node) => AGENT_META[node] || { icon: "⚙️", label: node, color: "text-gray-400" };
 
+// ── Startup Progress Hook ─────────────────────────────────────────────────────
+function useStartupProgress() {
+    const [state, setState] = useState({
+        ready: false,
+        pct: 0,
+        msg: "Memeriksa server...",
+        error: false
+    });
+
+    useEffect(() => {
+        // Cek health dulu
+        fetch("/api/health")
+            .then(r => r.json())
+            .then(data => {
+                if (data.ready) {
+                    setState({ ready: true, pct: 100, msg: "Siap!", error: false });
+                } else {
+                    subscribeSSE();
+                }
+            })
+            .catch(() => subscribeSSE());
+
+        function subscribeSSE() {
+            const es = new EventSource("/api/startup-progress");
+            es.onmessage = (e) => {
+                try {
+                    const data = JSON.parse(e.data);
+                    setState({
+                        ready: data.ready,
+                        pct: data.pct,
+                        msg: data.msg,
+                        error: false
+                    });
+                    if (data.ready) es.close();
+                } catch(err) {}
+            };
+            es.onerror = () => {
+                setState(s => ({ ...s, error: true, msg: "Koneksi ke server terputus. Mencoba ulang..." }));
+            };
+        }
+    }, []);
+
+    return state;
+}
+
+function StartupScreen({ pct, msg, error }) {
+    return (
+        <div className="flex items-center justify-center h-screen bg-gray-950 px-6">
+            <div className="w-full max-w-md space-y-8 text-center">
+                <div className="flex flex-col items-center gap-3">
+                    <div className="w-20 h-20 rounded-2xl bg-gray-900 border border-gray-800 flex items-center justify-center text-4xl shadow-lg relative overflow-hidden">
+                        <div className="absolute inset-0 bg-blue-500/10" style={{ height: `${100 - pct}%`, transition: 'height 0.5s ease-out' }}></div>
+                        <span className="relative z-10">⏳</span>
+                    </div>
+                    <div>
+                        <h1 className="text-xl font-bold tracking-tight">Memuat AI Model...</h1>
+                        <p className="text-gray-400 text-sm mt-1">{msg}</p>
+                    </div>
+                </div>
+
+                <div className="bg-gray-900 border border-gray-800 rounded-full h-2 w-full overflow-hidden">
+                    <div className="bg-gradient-to-r from-blue-500 to-purple-500 h-full rounded-full" style={{ width: `${pct}%`, transition: 'width 0.5s ease-out' }}></div>
+                </div>
+                
+                {error && (
+                    <p className="text-xs text-red-400 mt-2">Sedang mencoba menyambung ulang...</p>
+                )}
+            </div>
+        </div>
+    );
+}
+
 // ── Loading dots ──────────────────────────────────────────────────────────────
 function LoadingDots() {
     return (
@@ -134,6 +206,7 @@ function ChatBubble({ msg }) {
 
 // ── Main App ──────────────────────────────────────────────────────────────────
 function App() {
+    const startup = useStartupProgress();
     const [sessionId,    setSessionId]    = useState(null);
     const [messages,     setMessages]     = useState([]);
     const [inputValue,   setInputValue]   = useState("");
@@ -144,6 +217,7 @@ function App() {
     const [reasonings,   setReasonings]   = useState([]);
     const [script,       setScript]       = useState(null);
     const [sidebarTab,   setSidebarTab]   = useState("log");
+    const [ragCitations, setRagCitations] = useState([]);
     const [error,        setError]        = useState(null);
     const [connected,    setConnected]    = useState(false);
     const [showMobileSidebar, setShowMobileSidebar] = useState(false);
@@ -214,6 +288,12 @@ function App() {
                 evtSource.addEventListener("script", e => {
                     setScript(JSON.parse(e.data));
                     setSidebarTab("script");
+                });
+
+                evtSource.addEventListener("rag_citation", e => {
+                    const c = JSON.parse(e.data);
+                    setRagCitations(prev => [...prev, c]);
+                    setSidebarTab("rag");
                 });
 
                 evtSource.addEventListener("outline", () => setSidebarTab("log"));
@@ -288,6 +368,11 @@ function App() {
 
     // ── Render ────────────────────────────────────────────────────────────────
     const isId = userLang === "id";
+
+    // ── Startup Screen ────────────────────────────────────────────────────────
+    if (!startup.ready) {
+        return <StartupScreen pct={startup.pct} msg={startup.msg} error={startup.error} />;
+    }
 
     // ── Welcome Screen ────────────────────────────────────────────────────────
     if (!welcomed) {
@@ -492,7 +577,7 @@ function App() {
             <div className="w-full md:w-[450px] flex flex-col bg-gray-900 shrink-0 border-t md:border-t-0 md:border-l border-gray-800 h-[45vh] md:h-auto">
                 {/* Tabs */}
                 <div className="flex border-b border-gray-800 shrink-0">
-                    {[["log", "⚙️ Proses"], ["reasoning", "🧠 Internal Thought"], ["script", "📄 Skrip"]].map(([tab, label]) => (
+                    {[["log", "⚙️ Proses"], ["reasoning", "🧠 Internal Thought"], ["rag", "📚 Dari Buku"], ["script", "📄 Skrip"]].map(([tab, label]) => (
                         <button
                             key={tab}
                             onClick={() => setSidebarTab(tab)}
@@ -506,12 +591,81 @@ function App() {
                             {tab === "script" && script && (
                                 <span className="ml-1 w-1.5 h-1.5 bg-green-400 rounded-full inline-block"></span>
                             )}
+                            {tab === "rag" && ragCitations.length > 0 && (
+                                <span className="ml-1 bg-amber-500/20 text-amber-400 text-[9px] px-1 py-0.5 rounded-full border border-amber-500/30">{ragCitations.length}</span>
+                            )}
                         </button>
                     ))}
                 </div>
 
                 {/* Process Log Tab */}
                 {sidebarTab === "log" && <ProcessLog events={processLog} />}
+
+                {/* RAG Citations Tab */}
+                {sidebarTab === "rag" && (
+                    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                        {ragCitations.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center h-full text-center text-gray-600 gap-3 text-sm">
+                                <span className="text-3xl opacity-30">📚</span>
+                                <p>Kutipan dari buku storytelling akan muncul di sini<br/>saat RAG Librarian bekerja.</p>
+                            </div>
+                        ) : (
+                            ragCitations.map((c, i) => (
+                                <div key={i} className="bg-gray-950 border border-amber-900/30 rounded-lg p-3 shadow-inner">
+                                    {/* Header: framework + buku */}
+                                    <div className="flex items-start justify-between gap-2 mb-2 pb-2 border-b border-amber-900/20">
+                                        <div>
+                                            <span className="text-amber-400 text-xs font-semibold">📚 RAG Librarian</span>
+                                            {c.framework && (
+                                                <span className="ml-2 text-[10px] bg-amber-500/10 text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/20">
+                                                    {c.framework}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <span className="text-[10px] text-gray-500 font-mono shrink-0">{c.purpose}</span>
+                                    </div>
+
+                                    {/* Synthesis */}
+                                    {c.synthesis && (
+                                        <div className="mb-3">
+                                            <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Sintesis</p>
+                                            <div
+                                                className="markdown text-xs text-gray-300 leading-relaxed"
+                                                dangerouslySetInnerHTML={{ __html: marked.parse(c.synthesis || "") }}
+                                            />
+                                        </div>
+                                    )}
+
+                                    {/* Source books */}
+                                    {c.source_books && c.source_books.length > 0 && (
+                                        <div className="mb-3 flex flex-wrap gap-1">
+                                            {c.source_books.map((b, bi) => (
+                                                <span key={bi} className="text-[10px] bg-blue-900/30 text-blue-300 px-2 py-0.5 rounded-full border border-blue-800/40">
+                                                    📖 {b}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {/* Raw chunks (kutipan langsung dari buku) */}
+                                    {c.chunks && c.chunks.length > 0 && (
+                                        <div className="space-y-2">
+                                            <p className="text-[10px] text-gray-500 uppercase tracking-wider">Kutipan Asli dari Buku</p>
+                                            {c.chunks.slice(0, 3).map((chunk, ci) => (
+                                                <div key={ci} className="bg-gray-900/70 border border-gray-800 rounded p-2">
+                                                    <p className="text-[9px] text-amber-500/60 font-mono mb-1">{chunk.source || "Storytelling Knowledge Base"}</p>
+                                                    <p className="text-[11px] text-gray-400 leading-relaxed italic">
+                                                        "{(chunk.text || "").substring(0, 300)}{(chunk.text || "").length > 300 ? "..." : ""}"
+                                                    </p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            ))
+                        )}
+                    </div>
+                )}
 
                 {/* Reasoning Tab */}
                 {sidebarTab === "reasoning" && (
