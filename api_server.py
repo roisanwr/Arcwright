@@ -636,6 +636,29 @@ def admin_send_chat(req: AdminChatRequest):
     return {"status": "injected"}
 
 
+@app.get("/api/admin/stream/{session_id}")
+async def admin_stream_events(session_id: str, key: str, request: Request):
+    """Admin SSE — subscribe ke event sesi manapun tanpa cek device_id."""
+    if not ADMIN_KEY or key != ADMIN_KEY:
+        raise HTTPException(status_code=403, detail="Akses ditolak.")
+    # Buat queue jika belum ada (sesi lama yang sudah selesai)
+    if session_id not in session_queues:
+        session_queues[session_id] = asyncio.Queue()
+    q = session_queues[session_id]
+
+    async def generator():
+        while True:
+            if await request.is_disconnected():
+                break
+            try:
+                msg = await asyncio.wait_for(q.get(), timeout=2.0)
+                yield msg
+            except asyncio.TimeoutError:
+                yield {"event": "ping", "data": "{}"}
+
+    return EventSourceResponse(generator())
+
+
 @app.get("/api/stream")
 async def stream_events(session_id: str, request: Request):
     """SSE endpoint — kirim real-time events ke browser."""
