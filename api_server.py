@@ -349,4 +349,4 @@ async def stream_events(session_id: str, request: Request):
 if __name__ == "__main__":
     import uvicorn
     print("🎭 Arcwright Web UI → http://localhost:8000")
-    uvicorn.run("api_server:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("api_server:app", host="0.0.0.0", port=8765, reload=False)
