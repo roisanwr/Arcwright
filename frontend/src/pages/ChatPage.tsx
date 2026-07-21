@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useArcwright } from '../hooks/useArcwright'
 import { useHistory } from '../hooks/useHistory'
 import { LoadingDots, StatusBadge, MarkdownContent } from '../components/shared'
+import { fetchSession } from '../lib/api'
 import type { UIMessage, OutlineEvent, ScriptEvent } from '../types'
 
 // ── Onboarding steps ──────────────────────────────────────────────────────────
@@ -583,12 +584,31 @@ export default function ChatPage() {
 
   // ── Resume old session ────────────────────────────────────────────────────
 
-  const handleSelectSession = useCallback((sessionId: string) => {
+  const handleSelectSession = useCallback(async (sessionId: string) => {
     const meta = sessions.find(s => s.sessionId === sessionId)
     if (!meta) return
-    setLang(meta.language)
+    setLang(meta.language ?? 'id')
     setOnboarded(true)
     arcwright.reconnect(sessionId)
+
+    // Load chat history dari backend dan restore ke UI
+    try {
+      const msgs = await fetchSession(sessionId)
+      const uiMessages: UIMessage[] = msgs
+        .filter(m => m.msg_type === 'chat' && m.content?.trim())
+        .map((m, i) => ({
+          id:        `hist-${sessionId}-${i}`,
+          role:      m.role as 'user' | 'assistant',
+          content:   m.content,
+          kind:      'text' as const,
+          timestamp: new Date(m.created_at).getTime(),
+        }))
+      if (uiMessages.length > 0) {
+        arcwright.loadMessages(uiMessages)
+      }
+    } catch (err) {
+      console.error('Failed to load session history:', err)
+    }
   }, [sessions, arcwright])
 
   // ── New chat ──────────────────────────────────────────────────────────────

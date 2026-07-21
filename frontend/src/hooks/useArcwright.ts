@@ -25,6 +25,7 @@ export interface UseArcwrightReturn extends ArcwrightState {
   send: (text: string) => Promise<void>
   reconnect: (sessionId: string) => void
   reset: () => void
+  loadMessages: (msgs: UIMessage[]) => void
 }
 
 const INITIAL: ArcwrightState = {
@@ -186,5 +187,9 @@ export function useArcwright(): UseArcwrightReturn {
     setState(INITIAL)
   }, [])
 
-  return { ...state, start, send, reconnect, reset }
+  const loadMessages = useCallback((msgs: UIMessage[]) => {
+    setState(prev => ({ ...prev, messages: msgs }))
+  }, [])
+
+  return { ...state, start, send, reconnect, reset, loadMessages }
 }

@@ -66,6 +66,8 @@ export interface SessionMeta {
   language: string
   timestamp: number
   messageCount: number
+  status?: string        // active | completed | archived
+  updatedAt?: string     // ISO string dari backend
 }
 
 // ── Agent metadata for display ────────────────────────────────────────────────

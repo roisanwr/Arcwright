@@ -38,6 +38,7 @@ app.add_middleware(
 
 from langgraph.checkpoint.sqlite import SqliteSaver
 import sqlite3
+from typing import Optional
 
 # ── Global state ──────────────────────────────────────────────────────────────
 
@@ -49,6 +50,64 @@ checkpointer = SqliteSaver(conn)
 
 graph = create_arcwright_graph(checkpointer=checkpointer)
 
+# ── History DB — terpisah dari LangGraph checkpoint ──────────────────────────
+_hist_conn = sqlite3.connect("arcwright_history.db", check_same_thread=False)
+_hist_conn.row_factory = sqlite3.Row
+
+def _init_history_db():
+    cur = _hist_conn.cursor()
+    cur.executescript("""
+        CREATE TABLE IF NOT EXISTS session_meta (
+            session_id  TEXT PRIMARY KEY,
+            device_id   TEXT NOT NULL,
+            title       TEXT DEFAULT 'Sesi baru',
+            platform    TEXT DEFAULT 'general',
+            language    TEXT DEFAULT 'id',
+            status      TEXT DEFAULT 'active',
+            created_at  TEXT DEFAULT (datetime('now')),
+            updated_at  TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_device_id ON session_meta(device_id);
+
+        CREATE TABLE IF NOT EXISTS chat_messages (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id  TEXT NOT NULL REFERENCES session_meta(session_id),
+            role        TEXT NOT NULL,
+            content     TEXT NOT NULL,
+            msg_type    TEXT DEFAULT 'chat',
+            created_at  TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_session_messages ON chat_messages(session_id, created_at);
+    """)
+    _hist_conn.commit()
+
+_init_history_db()
+
+def _hist_save_session(session_id: str, device_id: str, platform: str, language: str):
+    _hist_conn.execute(
+        "INSERT OR IGNORE INTO session_meta (session_id, device_id, platform, language) VALUES (?,?,?,?)",
+        (session_id, device_id, platform, language)
+    )
+    _hist_conn.commit()
+
+def _hist_save_message(session_id: str, role: str, content: str, msg_type: str = "chat"):
+    _hist_conn.execute(
+        "INSERT INTO chat_messages (session_id, role, content, msg_type) VALUES (?,?,?,?)",
+        (session_id, role, content, msg_type)
+    )
+    _hist_conn.execute(
+        "UPDATE session_meta SET updated_at = datetime('now') WHERE session_id = ?",
+        (session_id,)
+    )
+    _hist_conn.commit()
+
+def _hist_update_title(session_id: str, title: str):
+    _hist_conn.execute(
+        "UPDATE session_meta SET title = ?, updated_at = datetime('now') WHERE session_id = ?",
+        (title, session_id)
+    )
+    _hist_conn.commit()
+
 # Per-session: queue SSE events
 session_queues: Dict[str, asyncio.Queue] = {}
 # Shared event loop (set on startup)
@@ -57,7 +116,32 @@ _main_loop: asyncio.AbstractEventLoop | None = None
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _push(session_id: str, event_type: str, data: Any):
-    """Thread-safe: push SSE event dari background thread ke async event loop."""
+    """Thread-safe: push SSE event dari background thread ke async event loop.
+    Sekaligus auto-save pesan chat ke history DB."""
+    # Auto-persist chat events ke DB
+    if event_type == "chat" and isinstance(data, dict):
+        role    = data.get("role", "assistant")
+        content = data.get("content", "")
+        if content:
+            try:
+                _hist_save_message(session_id, role, content, msg_type="chat")
+            except Exception:
+                pass  # jangan crash SSE karena DB error
+    elif event_type == "script" and isinstance(data, dict):
+        title = data.get("title", "Script")
+        body  = data.get("body", "")
+        if body:
+            try:
+                _hist_save_message(session_id, "assistant", f"[SCRIPT:{title}]\n{body}", msg_type="script")
+                # Update status sesi jadi completed
+                _hist_conn.execute(
+                    "UPDATE session_meta SET status='completed', updated_at=datetime('now') WHERE session_id=?",
+                    (session_id,)
+                )
+                _hist_conn.commit()
+            except Exception:
+                pass
+
     if _main_loop is None:
         return
     q = session_queues.get(session_id)
@@ -282,7 +366,7 @@ async def _on_startup():
 
 FRONTEND_DIST = Path(__file__).parent / "frontend" / "dist"
 if FRONTEND_DIST.exists():
-    # Serve static assets (JS, CSS, images)
+    # Mount /assets/ (JS, CSS bundles)
     app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="assets")
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -296,14 +380,39 @@ def serve_dev_ui():
     return HTMLResponse("<h1>ui.html not found</h1>")
 
 
+# ── Root static files (logo, favicon, icons) — harus sebelum catch-all ──────
+
+_STATIC_FILES = ["logo-mark.png", "logo-full.png", "favicon.svg", "icons.svg"]
+
+@app.get("/{filename}")
+def serve_root_static(filename: str):
+    """Serve file statis di root dist/ (logo, favicon) sebelum SPA catch-all."""
+    if filename in _STATIC_FILES:
+        file_path = FRONTEND_DIST / filename
+        if file_path.exists():
+            return FileResponse(str(file_path))
+    # Bukan static file — fallback ke SPA
+    dist_index = FRONTEND_DIST / "index.html"
+    if dist_index.exists():
+        return FileResponse(str(dist_index))
+    html_path = Path(__file__).parent / "ui.html"
+    if html_path.exists():
+        return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
+    return HTMLResponse("<h1>Frontend not found. Run: cd frontend && npm run build</h1>", status_code=503)
+
+
 @app.get("/api/start")
 def start_session(
     user_name: str = "User",
     language: str = "id",
     platform: str = "general",
+    device_id: str = "",
 ):
-    """Mulai sesi baru Arcwright. Terima nama user, bahasa, dan platform."""
+    """Mulai sesi baru Arcwright. Terima nama user, bahasa, platform, dan device_id."""
     session_id = str(uuid.uuid4())
+    # Simpan ke history DB jika ada device_id
+    if device_id:
+        _hist_save_session(session_id, device_id, platform, language)
     # Buat queue SEBELUM thread jalan, biar event gak ilang
     session_queues[session_id] = asyncio.Queue()
     threading.Thread(
@@ -317,6 +426,7 @@ def start_session(
 class ChatRequest(BaseModel):
     session_id: str
     message: str
+    device_id: str = ""
 
 
 @app.post("/api/chat")
@@ -325,13 +435,123 @@ def send_chat(req: ChatRequest):
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="Pesan kosong")
     if req.session_id not in session_queues:
-        raise HTTPException(status_code=404, detail="Session tidak ditemukan")
+        session_queues[req.session_id] = asyncio.Queue()
+
+    # Simpan pesan user ke history DB
+    if req.device_id and req.message.strip().lower() not in ("approve", "revise", "reject", "1", "2", "3"):
+        try:
+            _hist_save_message(req.session_id, "user", req.message)
+            # Auto-update title dari pesan user pertama
+            cur = _hist_conn.execute(
+                "SELECT COUNT(*) as cnt FROM chat_messages WHERE session_id=? AND role='user'",
+                (req.session_id,)
+            )
+            row = cur.fetchone()
+            if row and row["cnt"] == 1:
+                title = req.message[:60] + ("…" if len(req.message) > 60 else "")
+                _hist_update_title(req.session_id, title)
+        except Exception:
+            pass
+
     threading.Thread(
         target=_run_graph_thread,
         args=(req.session_id, req.message, False),
         daemon=True,
     ).start()
     return {"status": "processing"}
+
+
+# ── History endpoints ─────────────────────────────────────────────────────────
+
+@app.get("/api/history")
+def get_history(device_id: str):
+    """Ambil daftar sesi berdasarkan device_id."""
+    if not device_id:
+        raise HTTPException(status_code=400, detail="device_id diperlukan")
+    cur = _hist_conn.execute(
+        """SELECT session_id, title, platform, language, status, created_at, updated_at
+           FROM session_meta
+           WHERE device_id=? AND status != 'archived'
+           ORDER BY updated_at DESC LIMIT 50""",
+        (device_id,)
+    )
+    rows = [dict(r) for r in cur.fetchall()]
+    return {"sessions": rows}
+
+
+@app.get("/api/session/{session_id}")
+def get_session(session_id: str, device_id: str):
+    """Ambil chat history lengkap untuk satu sesi (verifikasi device_id)."""
+    if not device_id:
+        raise HTTPException(status_code=400, detail="device_id diperlukan")
+    # Verifikasi ownership
+    cur = _hist_conn.execute(
+        "SELECT device_id FROM session_meta WHERE session_id=?", (session_id,)
+    )
+    row = cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Sesi tidak ditemukan")
+    if row["device_id"] != device_id:
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+
+    msgs = _hist_conn.execute(
+        """SELECT role, content, msg_type, created_at
+           FROM chat_messages WHERE session_id=? ORDER BY created_at ASC""",
+        (session_id,)
+    )
+    return {
+        "session_id": session_id,
+        "messages": [dict(m) for m in msgs.fetchall()]
+    }
+
+
+class PatchSessionRequest(BaseModel):
+    device_id: str
+    title: Optional[str] = None
+    status: Optional[str] = None
+
+
+@app.patch("/api/session/{session_id}")
+def patch_session(session_id: str, body: PatchSessionRequest):
+    """Update title atau status sesi."""
+    cur = _hist_conn.execute(
+        "SELECT device_id FROM session_meta WHERE session_id=?", (session_id,)
+    )
+    row = cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Sesi tidak ditemukan")
+    if row["device_id"] != body.device_id:
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    if body.title:
+        _hist_update_title(session_id, body.title)
+    if body.status:
+        _hist_conn.execute(
+            "UPDATE session_meta SET status=?, updated_at=datetime('now') WHERE session_id=?",
+            (body.status, session_id)
+        )
+        _hist_conn.commit()
+    return {"ok": True}
+
+
+@app.delete("/api/session/{session_id}")
+def delete_session(session_id: str, device_id: str):
+    """Soft-delete sesi (set status='archived')."""
+    if not device_id:
+        raise HTTPException(status_code=400, detail="device_id diperlukan")
+    cur = _hist_conn.execute(
+        "SELECT device_id FROM session_meta WHERE session_id=?", (session_id,)
+    )
+    row = cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Sesi tidak ditemukan")
+    if row["device_id"] != device_id:
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    _hist_conn.execute(
+        "UPDATE session_meta SET status='archived', updated_at=datetime('now') WHERE session_id=?",
+        (session_id,)
+    )
+    _hist_conn.commit()
+    return {"ok": True}
 
 
 @app.get("/api/stream")
@@ -359,14 +579,12 @@ async def stream_events(session_id: str, request: Request):
 
 @app.get("/{full_path:path}")
 def serve_spa(full_path: str):
-    """Serve React SPA untuk semua route (/, /chat, dll.)."""
-    # Jangan intercept /api/* — itu sudah ditangani route di atas
+    """Serve React SPA untuk semua sub-route (/chat, /about, dll.)."""
     if full_path.startswith("api/"):
         raise HTTPException(status_code=404)
     dist_index = FRONTEND_DIST / "index.html"
     if dist_index.exists():
         return FileResponse(str(dist_index))
-    # Fallback ke ui.html lama jika frontend belum di-build
     html_path = Path(__file__).parent / "ui.html"
     if html_path.exists():
         return HTMLResponse(content=html_path.read_text(encoding="utf-8"))

@@ -32,29 +32,18 @@ Output format — always end with this JSON block:
 def web_researcher_node(state: ArcwrightState, llm) -> dict:
     """
     Web Researcher node — finds real-time trends for story angle.
+    Uses Hermes Stack local search.
 
     Reads:  story_fragments, user_profile
     Writes: web_research (overwrite)
     """
-    if not settings.TAVILY_API_KEY:
-        # Gracefully skip if no API key
-        return {
-            "web_research": [{
-                "note": "Web research skipped — TAVILY_API_KEY not set",
-                "trends": [],
-                "audience_insights": "",
-                "platform_tips": "",
-            }]
-        }
-
-    from langchain_community.tools.tavily_search import TavilySearchResults
-    import os
-    os.environ["TAVILY_API_KEY"] = settings.TAVILY_API_KEY
-
-    tavily_tool = TavilySearchResults(max_results=5)
+    # Menggunakan Hermes Stack, tidak butuh TAVILY_API_KEY
+    from agents.hermes_search_tool import HermesSearchTool
+    
+    hermes_tool = HermesSearchTool()
     agent = create_react_agent(
         model=llm,
-        tools=[tavily_tool],
+        tools=[hermes_tool],
         prompt=_SYSTEM_PROMPT,
     )
 
