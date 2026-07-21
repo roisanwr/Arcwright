@@ -380,6 +380,29 @@ def serve_dev_ui():
     return HTMLResponse("<h1>ui.html not found</h1>")
 
 
+# ── Health & startup progress (dipakai oleh ui.html) ─────────────────────────
+
+@app.get("/api/health")
+def health_check():
+    """Health check — ui.html polling ini sebelum mulai sesi."""
+    return {"ready": True, "status": "ok"}
+
+
+@app.get("/api/startup-progress")
+async def startup_progress(request: Request):
+    """SSE startup progress — fallback jika health check gagal."""
+    async def generator():
+        # Server sudah up, langsung kirim ready
+        yield {"data": json.dumps({"ready": True, "pct": 100, "msg": "Server siap!"})}
+        # Setelah itu ping saja agar koneksi tidak langsung drop
+        for _ in range(3):
+            if await request.is_disconnected():
+                break
+            await asyncio.sleep(1)
+            yield {"data": json.dumps({"ready": True, "pct": 100, "msg": "Server siap!"})}
+    return EventSourceResponse(generator())
+
+
 # ── Root static files (logo, favicon, icons) — harus sebelum catch-all ──────
 
 _STATIC_FILES = ["logo-mark.png", "logo-full.png", "favicon.svg", "icons.svg"]

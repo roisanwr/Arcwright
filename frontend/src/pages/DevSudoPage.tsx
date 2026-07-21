@@ -66,6 +66,14 @@ interface ScriptEvent {
   platform_variant?: string
 }
 
+interface RagCitation {
+  framework?: string
+  principle?: string
+  content?: string
+  source_books?: string[]
+  relevance?: string
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function timeAgo(dateStr: string): string {
@@ -268,6 +276,62 @@ function ReasoningPanel({ reasonings }: { reasonings: ReasoningEvent[] }) {
   )
 }
 
+// ── RAG Citations tab ─────────────────────────────────────────────────────────
+
+function RagPanel({ citations }: { citations: RagCitation[] }) {
+  const endRef = useRef<HTMLDivElement>(null)
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [citations])
+  return (
+    <div className="flex-1 overflow-y-auto p-3 space-y-3">
+      {citations.length === 0 ? (
+        <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
+          <span className="text-3xl opacity-20">📚</span>
+          <p className="text-xs" style={{ color: '#2d4055' }}>
+            Kutipan dari buku storytelling akan muncul di sini<br/>saat RAG Librarian bekerja.
+          </p>
+        </div>
+      ) : citations.map((c, i) => (
+        <div key={i} className="rounded-lg p-3 space-y-2" style={{ background: '#080e18', border: '1px solid #1a2d47' }}>
+          {/* Framework badge */}
+          {c.framework && (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold"
+                style={{ background: 'rgba(251,191,36,0.1)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.3)' }}>
+                {c.framework}
+              </span>
+              {c.principle && (
+                <span className="text-[10px]" style={{ color: '#8899a6' }}>{c.principle}</span>
+              )}
+            </div>
+          )}
+          {/* Content */}
+          {c.content && (
+            <p className="text-xs leading-relaxed italic" style={{ color: '#c4cdd6', borderLeft: '2px solid #1a2d47', paddingLeft: '8px' }}>
+              "{c.content}"
+            </p>
+          )}
+          {/* Relevance */}
+          {c.relevance && (
+            <p className="text-[10px]" style={{ color: '#2dd4bf' }}>↳ {c.relevance}</p>
+          )}
+          {/* Source books */}
+          {c.source_books && c.source_books.length > 0 && (
+            <div className="flex flex-wrap gap-1 pt-1" style={{ borderTop: '1px solid #1a2d47' }}>
+              {c.source_books.map((b, bi) => (
+                <span key={bi} className="text-[10px] px-2 py-0.5 rounded"
+                  style={{ background: '#0d1827', color: '#8899a6', border: '1px solid #1a2d47' }}>
+                  📖 {b}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+      <div ref={endRef} />
+    </div>
+  )
+}
+
 // ── Script tab ────────────────────────────────────────────────────────────────
 
 function ScriptPanel({ script }: { script: ScriptEvent | null }) {
@@ -421,12 +485,13 @@ export default function DevSudoPage() {
   const [filter, setFilter]       = useState<'all'|'live'|'active'|'completed'>('all')
   const [search, setSearch]       = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(true)
-  const [rightTab, setRightTab]   = useState<'log'|'reasoning'|'script'>('log')
+  const [rightTab, setRightTab]   = useState<'log'|'reasoning'|'rag'|'script'>('log')
 
   // Right panel live state (SSE)
   const [processLog, setProcessLog]   = useState<ProcessEvent[]>([])
   const [reasonings, setReasonings]   = useState<ReasoningEvent[]>([])
   const [liveScript, setLiveScript]   = useState<ScriptEvent | null>(null)
+  const [ragCitations, setRagCitations] = useState<RagCitation[]>([])
   const esRef = useRef<EventSource | null>(null)
   const refreshTimer = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -434,7 +499,8 @@ export default function DevSudoPage() {
 
   const connectSSE = useCallback((sessionId: string, key: string) => {
     if (esRef.current) { esRef.current.close(); esRef.current = null }
-    setProcessLog([]); setReasonings([]); setLiveScript(null)
+    setProcessLog([]); setReasonings([]); setLiveScript(null); setRagCitations([])
+    setRightTab('log')
 
     const es = new EventSource(`${BASE}/api/admin/stream/${sessionId}?key=${encodeURIComponent(key)}`)
     esRef.current = es
@@ -451,6 +517,11 @@ export default function DevSudoPage() {
     es.addEventListener('script', (e: MessageEvent) => {
       setLiveScript(JSON.parse(e.data))
       setRightTab('script')
+    })
+    es.addEventListener('rag_citation', (e: MessageEvent) => {
+      const c = JSON.parse(e.data) as RagCitation
+      setRagCitations(prev => [...prev, c])
+      setRightTab('rag')
     })
   }, [])
 
@@ -609,7 +680,12 @@ export default function DevSudoPage() {
         <div className="flex flex-col w-80 shrink-0 h-full" style={{ background: '#090f1c' }}>
           {/* Tabs */}
           <div className="flex shrink-0" style={{ borderBottom: '1px solid #1a2d47' }}>
-            {([['log','⚙️ Proses'],['reasoning','🧠 Thought'],['script','📄 Skrip']] as const).map(([tab, label]) => (
+            {([
+              ['log',       '⚙️ Proses'],
+              ['reasoning', '🧠 Thought'],
+              ['rag',       '📚 Buku'],
+              ['script',    '📄 Skrip'],
+            ] as const).map(([tab, label]) => (
               <button key={tab} onClick={() => setRightTab(tab)}
                 className="flex-1 py-2.5 text-[10px] font-semibold uppercase tracking-wider transition-colors"
                 style={{
@@ -626,6 +702,11 @@ export default function DevSudoPage() {
                     {reasonings.length}
                   </span>
                 )}
+                {tab==='rag' && ragCitations.length > 0 && (
+                  <span className="ml-1 text-[9px] px-1 rounded" style={{ background: 'rgba(251,191,36,0.15)', color: '#fbbf24' }}>
+                    {ragCitations.length}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -634,6 +715,7 @@ export default function DevSudoPage() {
           <div className="flex-1 min-h-0 flex flex-col">
             {rightTab === 'log'       && <ProcessLog events={processLog} />}
             {rightTab === 'reasoning' && <ReasoningPanel reasonings={reasonings} />}
+            {rightTab === 'rag'       && <RagPanel citations={ragCitations} />}
             {rightTab === 'script'    && <ScriptPanel script={liveScript} />}
           </div>
         </div>
