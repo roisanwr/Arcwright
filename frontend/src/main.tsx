@@ -5,6 +5,7 @@ import './index.css'
 import Landing from './pages/Landing'
 import ChatPage from './pages/ChatPage'
 import DevSudoPage from './pages/DevSudoPage'
+import DevPage from './pages/DevPage'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -12,6 +13,7 @@ createRoot(document.getElementById('root')!).render(
       <Routes>
         <Route path="/"          element={<Landing />} />
         <Route path="/chat"      element={<ChatPage />} />
+        <Route path="/dev"       element={<DevPage />} />
         <Route path="/dev/sudo"  element={<DevSudoPage />} />
       </Routes>
     </BrowserRouter>

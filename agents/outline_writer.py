@@ -124,7 +124,7 @@ Trends: {", ".join(str(t) for t in web[0].get("trends", [])[:3]) if web else "No
 Platform tips: {web[0].get("platform_tips", "") if web else ""}
 {revision_context}
 
-Build the most compelling outline possible. Apply the storytelling framework explicitly. Output the JSON."""
+Build the most compelling outline possible. Apply the storytelling framework explicitly. Output ONLY the [OUTLINE] JSON block. Do NOT write any conversational text, greetings, or instructions to check the UI panel."""
 
     result = agent.invoke({"messages": [{"role": "user", "content": query}]})
 

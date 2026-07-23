@@ -117,7 +117,7 @@ Duration: {outline.get("estimated_duration", "5 min")}
 {scripting_synthesis if scripting_synthesis else "Apply best practices for " + platform + " storytelling"}
 
 Write the full script. Then do ONE self-critique pass and revise if needed.
-Output the final [SCRIPT] JSON."""
+IMPORTANT: Output ONLY the [SCRIPT] JSON block. Do NOT write any greetings, conversational text, or closing remarks instructing the user to check UI panels. Only the JSON block is allowed."""
 
     result = agent.invoke({"messages": [{"role": "user", "content": query}]})
 

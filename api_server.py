@@ -371,14 +371,6 @@ if FRONTEND_DIST.exists():
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
-@app.get("/dev")
-def serve_dev_ui():
-    """Developer UI (original ui.html) — tetap tersedia di /dev."""
-    html_path = Path(__file__).parent / "ui.html"
-    if html_path.exists():
-        return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
-    return HTMLResponse("<h1>ui.html not found</h1>")
-
 
 # ── Health & startup progress (dipakai oleh ui.html) ─────────────────────────
 
